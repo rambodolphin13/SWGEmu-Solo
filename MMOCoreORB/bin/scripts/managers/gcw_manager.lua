@@ -5,7 +5,7 @@ gcwCheckTimer = 3600
 vulnerabilityDuration = 10800
 
 -- Amount of time in seconds between base vulnerabilities.
-vulnerabilityFrequency = 172800
+vulnerabilityFrequency = 43200
 
 powerSwitchCount = 7
 
@@ -13,7 +13,7 @@ powerSwitchCount = 7
 resetTimer = 1209600
 
 -- amount of time in seconds to wait when a slice fails
-sliceCooldown = 120
+sliceCooldown = 30
 
 dnaNucleotides = { "A", "G", "C", "T" }
 dnaPairs = { "AT", "TA", "GC", "CG" }
@@ -29,7 +29,7 @@ destructionTimer = 600
 maxBasesPerPlanet = 25
 
 -- Maximum bases placeable per player. Reducing this number will automatically remove extra bases from players upon login
-maxBasesPerPlayer = 3
+maxBasesPerPlayer = 10
 
 -- The construction delay when placing a GCW base in seconds
 basePlacementDelay = 10
