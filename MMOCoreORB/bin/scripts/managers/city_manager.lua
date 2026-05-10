@@ -73,19 +73,19 @@ OldCityGracePeriod = 4320
 EnableCityWarn = false
 
 --The number of citizens required to achieve each city rank. (Outpost, Village, Township, City, Metropolis)
-CitizensPerRank = {2, 4, 6, 8, 10}
+CitizensPerRank = {1, 1, 1, 1, 1}
 --CitizensPerRank = {10, 20, 35, 55, 85}
 
 --The radius in meters of the city at each city rank. (Outpost, Village, Township, City, Metropolis)
 RadiusPerRank = {150, 200, 300, 400, 450}
 
 -- Maximum for each rank.  ex. rank 1 = DecorationsPerRank * 1, rank 5 = DecorationsPerRank * 5
-DecorationsPerRank = 10
-TrainersPerRank = 3
-MissionTerminalsPerRank = 3
+DecorationsPerRank = 25
+TrainersPerRank = 10
+MissionTerminalsPerRank = 10
 
 -- Amount to discount city maintenance  float.  1 = 100%, .75 =75%, .5=50% etc
-maintenanceDiscount = 1.0
+maintenanceDiscount = .3
 
 --[[
 	CITIES ALLOWED PER PLANET
@@ -236,9 +236,17 @@ CitySpecializations = {
 	},
 	{--Stronghold
 		name = "@city/city:city_spec_stronghold",
-		cost = 150000,
+		cost = 150,
 		skillMods = {
-			{"private_defense", 90}
+			{"private_defense", 90},
+			{"private_spec_samplesize", 25},
+			{"private_spec_samplerate", 25},
+			{"private_spec_assembly", 25},
+			{"private_medical_rating", 25},
+			{"private_spec_cloning", 25},
+			{"private_spec_experimentation", 25},
+			{"private_spec_missions", 25},
+			{"private_spec_entertainer", 25}
 		}
 	},
 }

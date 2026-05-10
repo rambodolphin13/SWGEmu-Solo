@@ -41,13 +41,13 @@
 --which carries forward this exception.
 
 --Chance divisor for attribute bonus modifiers
-levelChance = 100
+levelChance = 300
 
 --Chance dividend for attribute bonus modifiers
 baseChance = 100
-yellowChance = 1000
-exceptionalChance = 100000
-legendaryChance = 1000000
+yellowChance = 50
+exceptionalChance = 100
+legendaryChance = 200
 
 --Multiplier values for bonus modifiers
 baseModifier = 1
@@ -56,7 +56,7 @@ exceptionalModifier = 8
 legendaryModifier = 9
 
 --The chance for random skill mods to be on looted weapons/wearables
-skillModChance = 1000 -- 1 in 1000
+skillModChance = 20 -- 1 in 20
 
 -- Dot Distribution chance by DOT type. They must equate to 1.0
 poisonDotChance = 0.50
@@ -70,13 +70,13 @@ mindDotChance = 0.15
 
 -- Value ranges for random dots on looted weapons (chance is set individually on the loot items)
 randomDotAttribute = {0, 8} -- See CreatureAttributes.h in src for numbers.
-randomDotStrength = {10, 100} -- poison x1.5, disease x0.5
-randomDotDuration = {30, 120} -- disease x4.0, fire x1.5
-randomDotPotency = {1, 50}
-randomDotUses = {250, 4999}
+randomDotStrength = {100, 100} -- poison x1.5, disease x0.5
+randomDotDuration = {120, 120} -- disease x4.0, fire x1.5
+randomDotPotency = {75, 75}
+randomDotUses = {25000, 25000}
 
 -- Modifier applied to min/max junk values found in loot item lua
-junkValueModifier = 5;
+junkValueModifier = 10;
 
 lootableArmorAttachmentStatMods = {
 	"aim",
@@ -816,39 +816,39 @@ lootableHeavyWeaponStatMods = {
 -- Values used to generate lightsaber crystal stats
 jediCrystalStats = {
 	lightsaber_module_force_crystal = {
-		minDamage = 0,
+		minDamage = 50,
 		maxDamage = 50,
-		minHitpoints = 700,
-		maxHitpoints = 1400,
+		minHitpoints = 1500,
+		maxHitpoints = 1500,
 		minHealthSac = 0,
-		maxHealthSac = -9,
+		maxHealthSac = 0,
 		minActionSac = 0,
-		maxActionSac = -9,
+		maxActionSac = 0,
 		minMindSac = 0,
-		maxMindSac = -9,
-		minAttackSpeed = 0,
+		maxMindSac = 0,
+		minAttackSpeed = -0.6,
 		maxAttackSpeed = -0.6,
-		minForceCost = 0,
+		minForceCost = -9.9,
 		maxForceCost = -9.9,
-		minWoundChance = 0,
+		minWoundChance = 4,
 		maxWoundChance = 4,
 	},
 	lightsaber_module_krayt_dragon_pearl = {
-		minDamage = 20,
-		maxDamage = 50,
-		minHitpoints = 900,
-		maxHitpoints = 1400,
-		minHealthSac = -6,
-		maxHealthSac = -9,
-		minActionSac = -6,
-		maxActionSac = -9,
-		minMindSac = -6,
-		maxMindSac = -9,
-		minAttackSpeed = -0.3,
-		maxAttackSpeed = -0.6,
-		minForceCost = -5.0,
-		maxForceCost = -9.9,
-		minWoundChance = 2,
-		maxWoundChance = 4,
+		minDamage = 100,
+		maxDamage = 100,
+		minHitpoints = 2500,
+		maxHitpoints = 2500,
+		minHealthSac = 0,
+		maxHealthSac = 0,
+		minActionSac = 0,
+		maxActionSac = 0,
+		minMindSac = 0,
+		maxMindSac = 0,
+		minAttackSpeed = -1.5,
+		maxAttackSpeed = -1.5,
+		minForceCost = -10,
+		maxForceCost = -10,
+		minWoundChance = 5,
+		maxWoundChance = 5,
 	}
 }
