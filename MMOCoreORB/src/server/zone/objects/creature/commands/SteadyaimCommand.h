@@ -57,20 +57,40 @@ public:
 		if (!doSteadyAim(player, group, amount))
 			return GENERALERROR;
 
+		awardSquadLeaderXP(player, group, 100);
+
 		if (!ghost->getCommandMessageString(STRING_HASHCODE("steadyaim")).isEmpty() && creature->checkCooldownRecovery("command_message")) {
 			UnicodeString shout(ghost->getCommandMessageString(STRING_HASHCODE("steadyaim")));
- 	 	 	server->getChatManager()->broadcastChatMessage(player, shout, 0, 80, player->getMoodID(), 0, ghost->getLanguageID());
- 	 	 	creature->updateCooldownTimer("command_message", 30 * 1000);
+			server->getChatManager()->broadcastChatMessage(player, shout, 0, 80, player->getMoodID(), 0, ghost->getLanguageID());
+			creature->updateCooldownTimer("command_message", 30 * 1000);
 		}
 
 		return SUCCESS;
 	}
 
 	bool doSteadyAim(CreatureObject* leader, GroupObject* group, int amount) const {
-		if (leader == nullptr || group == nullptr)
+		if (leader == nullptr)
 			return false;
 
-		for (int i = 0; i < group->getGroupSize(); i++) {
+		// Solo Steady Aim: apply the aim buff to the Squad Leader.
+		if (group == nullptr) {
+			ManagedReference<WeaponObject*> weapon = leader->getWeapon();
+
+			if (weapon == nullptr || !weapon->isRangedWeapon())
+				return false;
+
+			Locker clocker(leader);
+
+			sendCombatSpam(leader);
+			applySteadyAimBuff(leader, amount);
+
+			return true;
+		}
+
+		bool appliedBuff = false;
+
+		// Group Steady Aim: apply to valid group members, including the Squad Leader.
+		for (int i = 0; i < group->getGroupSize(); ++i) {
 			ManagedReference<CreatureObject*> member = group->getGroupMember(i);
 
 			if (member == nullptr || !member->isPlayerCreature())
@@ -79,31 +99,37 @@ public:
 			if (!isValidGroupAbilityTarget(leader, member, false))
 				continue;
 
+			ManagedReference<WeaponObject*> weapon = member->getWeapon();
+
+			if (weapon == nullptr || !weapon->isRangedWeapon())
+				continue;
+
 			Locker clocker(member, leader);
 
 			sendCombatSpam(member);
-
-			ManagedReference<WeaponObject*> weapon = member->getWeapon();
-
-			if (!weapon->isRangedWeapon())
-				continue;
-
-			int duration = 300;
-
-			ManagedReference<Buff*> buff = new Buff(member, actionCRC, duration, BuffType::SKILL);
-
-			Locker locker(buff);
-
-			buff->setSkillModifier("private_aim", amount);
-			buff->setStartFlyText("combat_effects", "go_steady", 0, 0xFF, 0); // there is no corresponding no_steady fly text
-
-			member->addBuff(buff);
-			//			memberPlayer->showFlyText("combat_effects", "go_steadied", 0, 0xFF, 0); // there is no corresponding no_steady fly text
-
+			applySteadyAimBuff(member, amount);
 			checkForTef(leader, member);
+
+			appliedBuff = true;
 		}
 
-		return true;
+		return appliedBuff;
+	}
+
+	void applySteadyAimBuff(CreatureObject* target, int amount) const {
+		if (target == nullptr)
+			return;
+
+		int duration = 300;
+
+		ManagedReference<Buff*> buff = new Buff(target, actionCRC, duration, BuffType::SKILL);
+
+		Locker locker(buff);
+
+		buff->setSkillModifier("private_aim", amount);
+		buff->setStartFlyText("combat_effects", "go_steady", 0, 0xFF, 0); // there is no corresponding no_steady fly text
+
+		target->addBuff(buff);
 	}
 
 };

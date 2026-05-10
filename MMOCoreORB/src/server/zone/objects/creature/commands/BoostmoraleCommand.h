@@ -61,6 +61,8 @@ public:
 		if (!distributeWounds(player, group, wounds))
 			return GENERALERROR;
 
+		awardSquadLeaderXP(player, group, 100);
+
 		if (!ghost->getCommandMessageString(STRING_HASHCODE("boostmorale")).isEmpty() && creature->checkCooldownRecovery("command_message")) {
 			UnicodeString shout(ghost->getCommandMessageString(STRING_HASHCODE("boostmorale")));
  	 	 	server->getChatManager()->broadcastChatMessage(player, shout, 0, 80, player->getMoodID(), 0, ghost->getLanguageID());
@@ -71,11 +73,33 @@ public:
 	}
 
 	void getWounds(CreatureObject* leader, GroupObject* group, int* wounds) const {
-		if (group == nullptr || leader == nullptr)
+		if (leader == nullptr)
 			return;
 
-		for (int i = 0; i < group->getGroupSize(); i++) {
+		// Solo use: heal the Squad Leader's wounds and battle fatigue.
+		if (group == nullptr) {
+			Locker clocker(leader);
 
+			int battleFatigue = (int) leader->getShockWounds();
+
+			for (int j = 0; j < 9; j++)
+				wounds[1] += leader->getWounds(j);
+
+			if (wounds[1] <= 0 && battleFatigue <= 0)
+				return;
+
+			for (int j = 0; j < 9; j++)
+				leader->setWounds(j, 0);
+
+			if (battleFatigue > 0)
+				leader->setShockWounds(0);
+
+			wounds[0] = 1;
+			return;
+		}
+
+		// Original group logic
+		for (int i = 0; i < group->getGroupSize(); i++) {
 			ManagedReference<CreatureObject*> member = group->getGroupMember(i);
 
 			if (member == nullptr)
@@ -99,8 +123,17 @@ public:
 	}
 
 	bool distributeWounds(CreatureObject* leader, GroupObject* group, int* wounds) const {
-		if (group == nullptr || leader == nullptr)
+		if (leader == nullptr)
 			return false;
+
+		// Solo use: remove wounds from the Squad Leader.
+		if (group == nullptr) {
+			Locker clocker(leader);
+
+			sendCombatSpam(leader);
+
+			return true;
+		}
 
 		int woundsPerMember = ceil((float)wounds[1]/(float)wounds[0]);
 		int woundsPerAttribute = ceil((float)woundsPerMember/9.f);

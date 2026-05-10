@@ -84,45 +84,61 @@ public:
 		if (!inflictHAM(player, 0, actionCost, mindCost))
 			return GENERALERROR;
 
-		for (int i = 1; i < group->getGroupSize(); ++i) {
-			ManagedReference<CreatureObject*> member = group->getGroupMember(i);
+		bool appliedRetreat = false;
 
-			if (member == nullptr || !member->isPlayerCreature())
-				continue;
+		// Solo Retreat: apply the retreat/burst-run buff to the Squad Leader.
+		if (group == nullptr) {
+			Locker clocker(player);
 
-			if (!isValidGroupAbilityTarget(creature, member, false))
-				continue;
+			if (doRetreat(player)) {
+				sendCombatSpam(player);
+				appliedRetreat = true;
+			}
+		} else {
+			// Group Retreat: apply to valid group members, including the Squad Leader.
+			for (int i = 0; i < group->getGroupSize(); ++i) {
+				ManagedReference<CreatureObject*> member = group->getGroupMember(i);
 
-			Locker clocker(member, player);
+				if (member == nullptr || !member->isPlayerCreature())
+					continue;
 
-			sendCombatSpam(member);
-			doRetreat(member);
+				if (!isValidGroupAbilityTarget(creature, member, false))
+					continue;
 
-			checkForTef(player, member);
+				Locker clocker(member, player);
+
+				if (doRetreat(member)) {
+					sendCombatSpam(member);
+					checkForTef(player, member);
+					appliedRetreat = true;
+				}
+			}
 		}
+
+		if (appliedRetreat)
+			awardSquadLeaderXP(player, group, 75);
 
 		if (!ghost->getCommandMessageString(STRING_HASHCODE("retreat")).isEmpty() && creature->checkCooldownRecovery("command_message")) {
 			UnicodeString shout(ghost->getCommandMessageString(STRING_HASHCODE("retreat")));
- 	 	 	server->getChatManager()->broadcastChatMessage(player, shout, 0, 80, player->getMoodID(), 0, ghost->getLanguageID());
- 	 	 	creature->updateCooldownTimer("command_message", 30 * 1000);
+ 			server->getChatManager()->broadcastChatMessage(player, shout, 0, 80, player->getMoodID(), 0, ghost->getLanguageID());
+			creature->updateCooldownTimer("command_message", 30 * 1000);
 		}
 
 		return SUCCESS;
 	}
 
 
-	void doRetreat(CreatureObject* player) const {
+	bool doRetreat(CreatureObject* player) const {
 		if (player == nullptr)
-			return;
+			return false;
 
 		if (!checkRetreat(player))
-			return;
+			return false;
 
 		uint32 actionCRC = STRING_HASHCODE("retreat");
 
-		if (player->hasBuff(actionCRC)) {
-			return;
-		}
+		if (player->hasBuff(actionCRC))
+			return false;
 
 		float groupRunMod = (float) player->getSkillMod("group_burst_run");
 
@@ -147,6 +163,7 @@ public:
 
 		player->updateCooldownTimer("retreat", 30000);
 
+		return true;
 	}
 
 };

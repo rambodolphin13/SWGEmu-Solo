@@ -33,7 +33,7 @@ public:
 			return GENERALERROR;
 
 		float skillMod = (float) creature->getSkillMod("volley");
-		int hamCost = (int) (100.0f * (1.0f - (skillMod / 100.0f))) * calculateGroupModifier(group);
+		int hamCost = (int) (100.0f * (1.0f - (skillMod / 100.0f)) * calculateGroupModifier(group));
 
 		int healthCost = creature->calculateCostAdjustment(CreatureAttribute::STRENGTH, hamCost);
 		int actionCost = creature->calculateCostAdjustment(CreatureAttribute::QUICKNESS, hamCost);
@@ -43,15 +43,20 @@ public:
 			return GENERALERROR;
 
 		uint64 targetID = target;
-		if (attemptVolleyFire(player, &targetID, skillMod))
-			if (!doVolleyFire(player, group, &targetID))
-				return GENERALERROR;
+
+		if (!attemptVolleyFire(player, &targetID, skillMod))
+			return GENERALERROR;
+
+		if (!doVolleyFire(player, group, &targetID))
+			return GENERALERROR;
+
+		awardSquadLeaderXP(player, group, 100);
 
 		return SUCCESS;
 	}
 
 	bool attemptVolleyFire(CreatureObject* player, uint64* target, int skillMod) const {
-		if (player == nullptr)
+		if (player == nullptr || target == nullptr)
 			return false;
 
 		ManagedReference<WeaponObject*> weapon = player->getWeapon();
@@ -66,7 +71,7 @@ public:
 			}
 		}
 
-		int ret = doCombatAction(player, (uint64)target);
+		int ret = doCombatAction(player, *target);
 
 		if (!skillCRC.isEmpty())
 			player->addSkillMod(SkillModManager::ABILITYBONUS, skillCRC, (int) skillMod * -2, false);
@@ -75,13 +80,18 @@ public:
 	}
 
 	bool doVolleyFire(CreatureObject* leader, GroupObject* group, uint64* target) const {
-		if (leader == nullptr || group == nullptr)
+		if (leader == nullptr || target == nullptr)
 			return false;
 
-		for (int i = 0; i < group->getGroupSize(); i++) {
+		if (group == nullptr)
+			return queueVolleyFireAttack(leader, leader, target);
+
+		bool applied = false;
+
+		for (int i = 0; i < group->getGroupSize(); ++i) {
 			ManagedReference<CreatureObject*> member = group->getGroupMember(i);
 
-			if (!member->isPlayerCreature() || !member->isInRange(leader, 128.0))
+			if (member == nullptr || !member->isPlayerCreature() || !member->isInRange(leader, 128.0))
 				continue;
 
 			if (!isValidGroupAbilityTarget(leader, member, false))
@@ -90,15 +100,28 @@ public:
 			if (!member->isInCombat())
 				continue;
 
-			Locker clocker(member, leader);
-
-			String queueAction = "volleyfireattack";
-			uint64 queueActionCRC = queueAction.hashCode();
-
-			member->executeObjectControllerAction(queueActionCRC, (uint64)target, "");
-
-			checkForTef(leader, member);
+			if (queueVolleyFireAttack(leader, member, target))
+				applied = true;
 		}
+
+		return applied;
+	}
+
+	bool queueVolleyFireAttack(CreatureObject* leader, CreatureObject* member, uint64* target) const {
+		if (leader == nullptr || member == nullptr || target == nullptr)
+			return false;
+
+		if (!member->isInCombat())
+			return false;
+
+		Locker clocker(member, leader);
+
+		String queueAction = "volleyfireattack";
+		uint64 queueActionCRC = queueAction.hashCode();
+
+		member->executeObjectControllerAction(queueActionCRC, *target, "");
+
+		checkForTef(leader, member);
 
 		return true;
 	}

@@ -10,6 +10,7 @@
 
 #include "CombatQueueCommand.h"
 #include "server/zone/objects/group/GroupObject.h"
+#include "server/zone/managers/player/PlayerManager.h"
 
 class SquadLeaderCommand : public CombatQueueCommand {
 protected:
@@ -38,7 +39,11 @@ public:
 		if (player == nullptr)
 			return false;
 
+		// Allow Squad Leader abilities while solo only if the player has novice Squad Leader.
 		if (group == nullptr) {
+			if (player->hasSkill("outdoors_squadleader_novice"))
+				return true;
+
 			player->sendSystemMessage("@error_message:not_grouped");
 			return false;
 		}
@@ -115,11 +120,11 @@ public:
 
 	float calculateGroupModifier(GroupObject* group) const {
 		if (group == nullptr)
-			return 0;
+			return 1.0f;
 
-		float modifier = 1.0f + ((float)(group->getGroupSize()) / 20.0f);
+		float modifier = 1.0f + ((float)(group->getGroupSize()) / 40.0f);
 
-			return modifier;
+		return modifier;
 	}
 
 	bool inflictHAM(CreatureObject* player, int health, int action, int mind) const {
@@ -152,6 +157,33 @@ public:
 			return;
 
 		player->sendSystemMessage("@cbt_spam:" + combatSpam);
+	}
+
+	void awardSquadLeaderXP(CreatureObject* player, GroupObject* group, int amount) const {
+		if (player == nullptr)
+			return;
+
+		// Only award command-use Squad Leader XP while solo.
+		if (group != nullptr)
+			return;
+
+		if (!player->hasSkill("outdoors_squadleader_novice"))
+			return;
+
+		if (amount <= 0)
+			return;
+
+		ZoneServer* zoneServer = player->getZoneServer();
+
+		if (zoneServer == nullptr)
+			return;
+
+		PlayerManager* playerManager = zoneServer->getPlayerManager();
+
+		if (playerManager == nullptr)
+			return;
+
+		playerManager->awardExperience(player, "squadleader", amount, true);
 	}
 
 /*    bool setCommandMessage(CreatureObject* creature, String message){

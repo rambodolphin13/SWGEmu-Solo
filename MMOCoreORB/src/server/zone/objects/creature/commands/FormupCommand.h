@@ -54,21 +54,37 @@ public:
 		if (!doFormUp(player, group))
 			return GENERALERROR;
 
+		awardSquadLeaderXP(player, group, 50);
+
 		if (!ghost->getCommandMessageString(STRING_HASHCODE("formup")).isEmpty() && creature->checkCooldownRecovery("command_message")) {
 			UnicodeString shout(ghost->getCommandMessageString(STRING_HASHCODE("formup")));
- 	 	 	server->getChatManager()->broadcastChatMessage(player, shout, 0, 80, player->getMoodID(), 0, ghost->getLanguageID());
- 	 	 	creature->updateCooldownTimer("command_message", 30 * 1000);
+	 	 	server->getChatManager()->broadcastChatMessage(player, shout, 0, 80, player->getMoodID(), 0, ghost->getLanguageID());
+	 	 	creature->updateCooldownTimer("command_message", 30 * 1000);
 		}
 
 		return SUCCESS;
 	}
 
 	bool doFormUp(CreatureObject* leader, GroupObject* group) const {
-		if (leader == nullptr || group == nullptr)
+		if (leader == nullptr)
 			return false;
 
-		for (int i = 0; i < group->getGroupSize(); i++) {
+		// Allow solo Form Up on the Squad Leader.
+		if (group == nullptr) {
+			Locker clocker(leader);
 
+			sendCombatSpam(leader);
+
+			if (leader->isDizzied())
+				leader->removeStateBuff(CreatureState::DIZZY);
+
+			if (leader->isStunned())
+				leader->removeStateBuff(CreatureState::STUNNED);
+
+			return true;
+		}
+
+		for (int i = 0; i < group->getGroupSize(); ++i) {
 			ManagedReference<CreatureObject*> member = group->getGroupMember(i);
 
 			if (member == nullptr || !member->isPlayerCreature())
@@ -83,7 +99,7 @@ public:
 
 			if (member->isDizzied())
 				member->removeStateBuff(CreatureState::DIZZY);
-					
+
 			if (member->isStunned())
 				member->removeStateBuff(CreatureState::STUNNED);
 

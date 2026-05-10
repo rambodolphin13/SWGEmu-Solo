@@ -49,16 +49,45 @@ public:
 		} else {
 			if (!doRally(player, group))
 				return GENERALERROR;
+
+			awardSquadLeaderXP(player, group, 150);
 		}
 
 		return SUCCESS;
 	}
 
 	bool doRally(CreatureObject* leader, GroupObject* group) const {
-		if (leader == nullptr || group == nullptr)
+		if (leader == nullptr)
 			return false;
 
 		int duration = 30;
+
+		// Solo Rally: apply the Rally buff to the Squad Leader.
+		if (group == nullptr) {
+			leader->sendSystemMessage("@cbt_spam:rally_success_single"); //"You rally the group!"
+
+			ManagedReference<Buff*> buff = new Buff(leader, actionCRC, duration, BuffType::SKILL);
+
+			Locker locker(buff);
+
+			ManagedReference<WeaponObject*> weapon = leader->getWeapon();
+
+			if (weapon != nullptr) {
+				if (!weapon->getCreatureAccuracyModifiers()->isEmpty()) {
+					String skillCRC = weapon->getCreatureAccuracyModifiers()->get(0);
+
+					buff->setSkillModifier(skillCRC, 50);
+				}
+			}
+
+			buff->setSkillModifier("private_group_ranged_defense", 30);
+			buff->setSkillModifier("private_group_melee_defense", 30);
+
+			leader->addBuff(buff);
+			leader->setRalliedState(duration);
+
+			return true;
+		}
 
 		leader->sendSystemMessage("@cbt_spam:rally_success_single"); //"You rally the group!"
 		sendRallyCombatSpam(leader, group, true);
@@ -108,7 +137,11 @@ public:
 	}
 
 	void sendRallyCombatSpam(CreatureObject* leader, GroupObject* group, bool success) const {
-		if (leader == nullptr || group == nullptr)
+		if (leader == nullptr)
+			return;
+
+		// Solo Rally does not need group combat spam handling.
+		if (group == nullptr)
 			return;
 
 		Zone* zone = leader->getZone();
