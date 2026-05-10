@@ -178,9 +178,35 @@ void SlicingSessionImplementation::handleMenuSelect(CreatureObject* pl, byte men
 		switch(menuID) {
 		case 0: {
 			if (hasPrecisionLaserKnife()) {
-				if (firstCable != 0)
-					handleSliceFailed(); // Handle failed slice attempt
-				else
+				if (firstCable != 0) {
+					int sliceSkill = getSlicingSkill(player);
+					int rescueChance = 0;
+
+					switch (sliceSkill) {
+					case 5:
+						rescueChance = 65;
+						break;
+					case 4:
+						rescueChance = 50;
+						break;
+					case 3:
+						rescueChance = 35;
+						break;
+					case 2:
+						rescueChance = 20;
+						break;
+					case 1:
+						rescueChance = 10;
+						break;
+					default:
+						break;
+					}
+
+					if (System::random(99) < rescueChance)
+						cableBlue = true;
+					else
+						handleSliceFailed(); // Handle failed slice attempt
+				} else
 					cableBlue = true;
 			} else
 				player->sendSystemMessage("@slicing/slicing:no_knife");
@@ -188,9 +214,35 @@ void SlicingSessionImplementation::handleMenuSelect(CreatureObject* pl, byte men
 		}
 		case 1: {
 			if (hasPrecisionLaserKnife()) {
-				if (firstCable != 1)
-					handleSliceFailed(); // Handle failed slice attempt
-				else
+				if (firstCable != 1) {
+					int sliceSkill = getSlicingSkill(player);
+					int rescueChance = 0;
+
+					switch (sliceSkill) {
+					case 5:
+						rescueChance = 65;
+						break;
+					case 4:
+						rescueChance = 50;
+						break;
+					case 3:
+						rescueChance = 35;
+						break;
+					case 2:
+						rescueChance = 20;
+						break;
+					case 1:
+						rescueChance = 10;
+						break;
+					default:
+						break;
+					}
+
+					if (System::random(99) < rescueChance)
+						cableRed = true;
+					else
+						handleSliceFailed(); // Handle failed slice attempt
+				} else
 					cableRed = true;
 			} else
 				player->sendSystemMessage("@slicing/slicing:no_knife");
@@ -212,8 +264,35 @@ void SlicingSessionImplementation::handleMenuSelect(CreatureObject* pl, byte men
 		if (hasPrecisionLaserKnife()) {
 			if (firstCable != menuID)
 				handleSlice(suiBox); // Handle Successful Slice
-			else
-				handleSliceFailed(); // Handle failed slice attempt //bugfix 820
+			else {
+				int sliceSkill = getSlicingSkill(player);
+				int rescueChance = 0;
+
+				switch (sliceSkill) {
+				case 5:
+					rescueChance = 65;
+					break;
+				case 4:
+					rescueChance = 50;
+					break;
+				case 3:
+					rescueChance = 35;
+					break;
+				case 2:
+					rescueChance = 20;
+					break;
+				case 1:
+					rescueChance = 10;
+					break;
+				default:
+					break;
+				}
+
+				if (System::random(99) < rescueChance)
+					handleSlice(suiBox); // Skill-based recovery on a mistake
+				else
+					handleSliceFailed(); // Handle failed slice attempt //bugfix 820
+			}
 			return;
 		} else
 			player->sendSystemMessage("@slicing/slicing:no_knife");
@@ -470,20 +549,20 @@ void SlicingSessionImplementation::handleSlice(SuiListBox* suiBox) {
 
 	if (tangibleObject->isContainerObject() || tangibleObject->getGameObjectType() == SceneObjectType::PLAYERLOOTCRATE) {
 		handleContainerSlice();
-		playerManager->awardExperience(player, "slicing", 250, true); // Container Slice XP
+		playerManager->awardExperience(player, "slicing", 500, true); // Container Slice XP
 	} else if (tangibleObject->isMissionTerminal()) {
 		MissionTerminal* term = cast<MissionTerminal*>( tangibleObject.get());
-		playerManager->awardExperience(player, "slicing", 100, true); // Terminal Slice XP
+		playerManager->awardExperience(player, "slicing", 250, true); // Terminal Slice XP
 		term->addSlicer(player);
 		player->sendSystemMessage("@slicing/slicing:terminal_success");
 	} else if (tangibleObject->isWeaponObject()) {
 		handleWeaponSlice();
-		playerManager->awardExperience(player, "slicing", 250, true); // Weapon Slice XP
+		playerManager->awardExperience(player, "slicing", 500, true); // Weapon Slice XP
 	} else if (tangibleObject->isArmorObject()) {
 		handleArmorSlice();
-		playerManager->awardExperience(player, "slicing", 250, true); // Armor Slice XP
+		playerManager->awardExperience(player, "slicing", 500, true); // Armor Slice XP
 	} else if ( isBaseSlice()){
-		playerManager->awardExperience(player,"slicing", 1000, true); // Base slicing
+		playerManager->awardExperience(player, "slicing", 1500, true); // Base slicing
 
 		Zone* zone = player->getZone();
 
@@ -807,7 +886,8 @@ void SlicingSessionImplementation::handleSliceFailed() {
 				gcwMan->failSecuritySlice(tangibleObject.get());
 
 		}
-	} else if (!tangibleObject->isMissionTerminal() && !isKeypadSlice()) {
+	} else if (!tangibleObject->isMissionTerminal() && !isKeypadSlice()
+			&& !tangibleObject->isWeaponObject() && !tangibleObject->isArmorObject()) {
 		tangibleObject->setSliced(true);
 	}
 
