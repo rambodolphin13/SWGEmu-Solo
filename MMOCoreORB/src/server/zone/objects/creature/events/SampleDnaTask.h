@@ -110,13 +110,14 @@ public:
 			// Higher skill, lower chance of aggro
 			int sampleRoll = System::random(100);
 			sampleRoll += System::random(player->getSkillMod("luck") + player->getSkillMod("force_luck"));
+			sampleRoll += 20;
 			// need to revist master against CL70 i.e. ((100-70)/70) + (100-70) = 0 + (30) = 30/2 = ( roll mod is 15)
 			// need to revist master against CL2 i.e. ((100-2)/2) + (100-2) = 49 + (98) = 147/2 = ( roll mod is 73)
 			// so with no luck you need 95 or better roll for amazing
 			float rollMod = (((skillMod-cl)/cl))  + (skillMod-cl);
 			rollMod /= 2;
 			// We have the players roll. NOW to determine if success of failure;
-			if (sampleRoll > 75) { // adjust great success ot 75% and above
+			if (sampleRoll > 65) { // Great success at 65+ for solo-friendly DNA sampling.
 				int maxSamples = (int) ceil((float) skillMod / 25.f);
 				if (creature->getDnaSampleCount() > maxSamples ){
 					creature->setDnaState(CreatureManager::DNASAMPLED);
@@ -127,10 +128,10 @@ public:
 					result = 5;
 				}
 			}
-			else if (sampleRoll < 5) {
+			else if (sampleRoll < 2) {
 				// Critical failure, this can always occur
 				result = 1;
-			} else if ( (35 + rollMod) < sampleRoll) { // failure your roll < 50%
+			} else if ( (20 + rollMod) < sampleRoll) { // failure your roll < 50%
 				result = 2;
 			} else { // success
 				int maxSamples = (int)(ceil((double)skillMod / (double)25));
@@ -142,7 +143,7 @@ public:
 					// did we aggro?
 					int aggroChance = System::random(100);
 					int aggroMod = (creature->getDnaSampleCount() * 5);
-					if ( (aggroChance+aggroMod) > (sampleRoll+rollMod) || aggroChance <= 5)  // aggro
+					if ((aggroChance + aggroMod) > (sampleRoll + rollMod + 25) || aggroChance <= 2)  // aggro
 						result = 3;
 					else { // it didnt care and we didnt kill it
 						result = 5;
@@ -213,7 +214,7 @@ public:
 		player->sendSystemMessage(str);
 	}
 	void award(int cl, float rollMod, int skillMod) {
-		int xp = DnaManager::instance()->generateXp(cl);
+		int xp = DnaManager::instance()->generateXp(cl) * 2;
 		ManagedReference<PlayerManager*> playerManager = player->getZoneServer()->getPlayerManager();
 		if(playerManager != nullptr)
 			playerManager->awardExperience(player, "bio_engineer_dna_harvesting", xp, true);
@@ -221,7 +222,7 @@ public:
 		// generate quality based on skill
 		int luckRoll = System::random(100);
 		luckRoll += System::random(player->getSkillMod("luck") + player->getSkillMod("force_luck"));
-		int qualityRoll = luckRoll + rollMod;
+		int qualityRoll = luckRoll + rollMod + 15;
 
 		int low = 7;
 		int mid = 6;
