@@ -1105,7 +1105,7 @@ void CreatureManagerImplementation::tame(Creature* creature, CreatureObject* pla
 		return;
 
 	int templateLevel = creatureTemplate->getLevel();
-	int maxLevelofPets = player->getSkillMod("tame_level");
+	int maxLevelofPets = 1000;
 
 	if (!player->hasSkill("outdoors_creaturehandler_novice") || (templateLevel > maxLevelofPets)) {
 		player->sendSystemMessage("@pet/pet_menu:sys_lack_skill"); // You lack the skill to be able to tame that creature.
@@ -1153,7 +1153,7 @@ void CreatureManagerImplementation::tame(Creature* creature, CreatureObject* pla
 	int currentlySpawned = 0;
 	int spawnedLevel = 0;
 	int level = creature->getLevel();
-	int maxPets = player->getSkillMod("keep_creature");
+	int maxPets = 10;
 
 	for (int i = 0; i < ghost->getActivePetsSize(); ++i) {
 		ManagedReference<AiAgent*> object = ghost->getActivePet(i);

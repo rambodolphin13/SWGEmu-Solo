@@ -210,8 +210,8 @@ void PetControlDeviceImplementation::callObject(CreatureObject* player, bool ini
 
 	int currentlySpawned = 0;
 	int spawnedLevel = 0;
-	int maxPets = 1;
-	int maxLevelofPets = 10;
+	int maxPets = 10;
+	int maxLevelofPets = 1000;
 	int level = pet->getLevel();
 
 	if (pet->getCreatureTemplate() == nullptr) {
@@ -228,8 +228,8 @@ void PetControlDeviceImplementation::callObject(CreatureObject* player, bool ini
 		bool ch = player->hasSkill("outdoors_creaturehandler_novice");
 
 		if (ch) {
-			maxPets = player->getSkillMod("keep_creature");
-			maxLevelofPets = player->getSkillMod("tame_level");
+			maxPets = 10;
+			maxLevelofPets = 1000;
 		}
 
 		if (creaturePet->getAdultLevel() > maxLevelofPets) {
@@ -243,7 +243,7 @@ void PetControlDeviceImplementation::callObject(CreatureObject* player, bool ini
 		}
 
 	} else if (petType == PetManager::FACTIONPET){
-		maxPets = 3;
+		maxPets = 10;
 	}
 
 	for (int i = 0; i < ghost->getActivePetsSize(); ++i) {
