@@ -337,3 +337,4 @@ includeFile("conversations/junk_dealer/junk_dealer_sneg_conv.lua")
 
 -- Custom NPCs
 includeFile("../custom_scripts/mobile/conversations/dancer_buffer_conv.lua")
+includeFile("../custom_scripts/mobile/conversations/musician_buffer_conv.lua")

@@ -35,6 +35,7 @@ Luna<LuaCreatureObject>::RegType LuaCreatureObject::Register[] = {
 		{ "sendSystemMessageWithTO", &LuaCreatureObject::sendSystemMessageWithTO },
 		{ "sendGroupMessage", &LuaCreatureObject::sendGroupMessage },
 		{ "playMusicMessage", &LuaCreatureObject::playMusicMessage },
+		{ "playJukeboxMusicNearby", &LuaCreatureObject::playJukeboxMusicNearby },
 		{ "sendNewbieTutorialRequest", &LuaCreatureObject::sendNewbieTutorialRequest },
 		{ "hasScreenPlayState", &LuaCreatureObject::hasScreenPlayState },
 		{ "setScreenPlayState", &LuaCreatureObject::setScreenPlayState },
@@ -451,6 +452,82 @@ int LuaCreatureObject::playMusicMessage(lua_State *L) {
 	realObject->playMusicMessage(value);
 
 	return 0;
+}
+
+int LuaCreatureObject::playJukeboxMusicNearby(lua_State* L) {
+	// Lua usage:
+	// CreatureObject(pNpc):playJukeboxMusicNearby("sound/music_figrin_dan_1_loop.snd", 64)
+	if (realObject == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	int top = lua_gettop(L);
+
+	if (top < 2 || !lua_isstring(L, 2)) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	String song = lua_tostring(L, 2);
+	float radius = 64.f;
+
+	if (top >= 3 && lua_isnumber(L, 3)) {
+		radius = (float)lua_tonumber(L, 3);
+	}
+
+	if (radius <= 0.f) {
+		radius = 64.f;
+	}
+
+	Zone* zone = realObject->getZone();
+
+	if (zone == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	SortedVector<TreeEntry*> closeSceneObjects;
+	CloseObjectsVector* closeObjectsVector = (CloseObjectsVector*)realObject->getCloseObjects();
+
+	if (closeObjectsVector == nullptr) {
+		zone->getInRangeObjects(realObject->getPositionX(), realObject->getPositionZ(), realObject->getPositionY(), radius, &closeSceneObjects, true, false);
+	} else {
+		closeObjectsVector->safeCopyTo(closeSceneObjects);
+	}
+
+	int sent = 0;
+	uint64 sourceParentID = realObject->getParentID();
+
+	for (int i = 0; i < closeSceneObjects.size(); ++i) {
+		SceneObject* sceneObject = cast<SceneObject*>(closeSceneObjects.get(i));
+
+		if (sceneObject == nullptr || !sceneObject->isPlayerCreature()) {
+			continue;
+		}
+
+		// If the musician is inside a cell, only play to players in that same cell.
+		// Outdoor musicians use radius only.
+		if (sourceParentID != 0 && sceneObject->getParentID() != sourceParentID) {
+			continue;
+		}
+
+		if (!sceneObject->isInRange(realObject, radius)) {
+			continue;
+		}
+
+		CreatureObject* player = sceneObject->asCreatureObject();
+
+		if (player == nullptr) {
+			continue;
+		}
+
+		player->playMusicMessage(song);
+		sent++;
+	}
+
+	lua_pushinteger(L, sent);
+	return 1;
 }
 
 int LuaCreatureObject::sendNewbieTutorialRequest(lua_State *L) {
