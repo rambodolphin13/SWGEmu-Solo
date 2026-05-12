@@ -4,8 +4,7 @@ MusicianBufferPerformance = ScreenPlay:new {
 
 registerScreenPlay("MusicianBufferPerformance", false)
 
--- Deprecated by jukebox-area music test.
--- Kept as a harmless placeholder in case screenplays.lua still includes it.
+-- Deprecated by real jukebox control.
 function MusicianBufferPerformance:playMusicLoop(pNpc)
 	return
 end

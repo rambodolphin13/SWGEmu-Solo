@@ -1,17 +1,39 @@
 musicianBufferConvoHandler = conv_handler:new {}
 
-function musicianBufferConvoHandler:playAreaSong(pPlayer, pNpc, song, label)
+function musicianBufferConvoHandler:playOmniJukeboxSong(pPlayer, pNpc, song, label)
 	if (pPlayer == nil or pNpc == nil) then
 		return
 	end
 
-	local sent = CreatureObject(pNpc):playJukeboxMusicNearby(song, 64)
+	local result = CreatureObject(pNpc):controlNearbyJukebox(song)
 
-	if (sent == nil) then
-		sent = 0
+	if (result == nil) then
+		result = 0
 	end
 
-	CreatureObject(pPlayer):sendSystemMessage("Rinna changes the area music to " .. label .. ". Nearby players reached: " .. sent .. ".")
+	if (result == 1) then
+		CreatureObject(pPlayer):sendSystemMessage("Rinna starts the omni box music source: " .. label .. ".")
+	else
+		CreatureObject(pPlayer):sendSystemMessage("Rinna could not start the omni box music source.")
+	end
+end
+
+function musicianBufferConvoHandler:stopOmniJukeboxSong(pPlayer, pNpc)
+	if (pPlayer == nil or pNpc == nil) then
+		return
+	end
+
+	local result = CreatureObject(pNpc):controlNearbyJukebox("sound/music_silence.snd")
+
+	if (result == nil) then
+		result = 0
+	end
+
+	if (result == 1) then
+		CreatureObject(pPlayer):sendSystemMessage("Rinna stops the omni box music source.")
+	else
+		CreatureObject(pPlayer):sendSystemMessage("Rinna could not stop the omni box music source.")
+	end
 end
 
 function musicianBufferConvoHandler:getInitialScreen(pPlayer, pNpc, pConvTemplate)
@@ -53,17 +75,19 @@ function musicianBufferConvoHandler:runScreenHandlers(pConvTemplate, pPlayer, pN
 		CreatureObject(pPlayer):setShockWounds(0)
 		CreatureObject(pPlayer):sendSystemMessage("The musician buffer fully restores and buffs you.")
 	elseif (screenID == "song_figrin_1") then
-		self:playAreaSong(pPlayer, pNpc, "sound/music_figrin_dan_1_loop.snd", "Figrin Dan 1")
+		self:playOmniJukeboxSong(pPlayer, pNpc, "sound/music_figrin_dan_1_loop.snd", "Figrin Dan 1")
 	elseif (screenID == "song_figrin_2") then
-		self:playAreaSong(pPlayer, pNpc, "sound/music_figrin_dan_2_loop.snd", "Figrin Dan 2")
+		self:playOmniJukeboxSong(pPlayer, pNpc, "sound/music_figrin_dan_2_loop.snd", "Figrin Dan 2")
 	elseif (screenID == "song_max_rebo_1") then
-		self:playAreaSong(pPlayer, pNpc, "sound/music_max_rebo_1_loop.snd", "Max Rebo 1")
+		self:playOmniJukeboxSong(pPlayer, pNpc, "sound/music_max_rebo_1_loop.snd", "Max Rebo 1")
 	elseif (screenID == "song_max_rebo_2") then
-		self:playAreaSong(pPlayer, pNpc, "sound/music_max_rebo_2_loop.snd", "Max Rebo 2")
+		self:playOmniJukeboxSong(pPlayer, pNpc, "sound/music_max_rebo_2_loop.snd", "Max Rebo 2")
 	elseif (screenID == "song_chamber") then
-		self:playAreaSong(pPlayer, pNpc, "sound/music_starport_a_loop.snd", "Chamber Music")
+		self:playOmniJukeboxSong(pPlayer, pNpc, "sound/music_starport_a_loop.snd", "Chamber Music")
+	elseif (screenID == "song_intro") then
+		self:playOmniJukeboxSong(pPlayer, pNpc, "sound/music_intro_loop.snd", "Star Wars Intro")
 	elseif (screenID == "song_stop") then
-		self:playAreaSong(pPlayer, pNpc, "sound/music_silence.snd", "silence")
+		self:stopOmniJukeboxSong(pPlayer, pNpc)
 	elseif (screenID == "show_location") then
 		local localX = SceneObject(pPlayer):getPositionX()
 		local localY = SceneObject(pPlayer):getPositionY()

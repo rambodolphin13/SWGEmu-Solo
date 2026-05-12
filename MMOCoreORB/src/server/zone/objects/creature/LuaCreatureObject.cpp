@@ -24,6 +24,7 @@
 #include "server/zone/objects/player/events/StoreSpawnedChildrenTask.h"
 #include "server/zone/objects/mission/MissionObject.h"
 #include "server/zone/managers/mission/MissionManager.h"
+#include "server/zone/objects/tangible/eventperk/Jukebox.h"
 
 const char LuaCreatureObject::className[] = "LuaCreatureObject";
 
@@ -36,6 +37,7 @@ Luna<LuaCreatureObject>::RegType LuaCreatureObject::Register[] = {
 		{ "sendGroupMessage", &LuaCreatureObject::sendGroupMessage },
 		{ "playMusicMessage", &LuaCreatureObject::playMusicMessage },
 		{ "playJukeboxMusicNearby", &LuaCreatureObject::playJukeboxMusicNearby },
+		{ "controlNearbyJukebox", &LuaCreatureObject::controlNearbyJukebox },
 		{ "sendNewbieTutorialRequest", &LuaCreatureObject::sendNewbieTutorialRequest },
 		{ "hasScreenPlayState", &LuaCreatureObject::hasScreenPlayState },
 		{ "setScreenPlayState", &LuaCreatureObject::setScreenPlayState },
@@ -527,6 +529,165 @@ int LuaCreatureObject::playJukeboxMusicNearby(lua_State* L) {
 	}
 
 	lua_pushinteger(L, sent);
+	return 1;
+}
+
+int LuaCreatureObject::controlNearbyJukebox(lua_State* L) {
+	if (realObject == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	int top = lua_gettop(L);
+
+	if (top < 2 || !lua_isstring(L, 2)) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	String song = lua_tostring(L, 2);
+
+	Zone* zone = realObject->getZone();
+
+	if (zone == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	ZoneServer* zoneServer = realObject->getZoneServer();
+
+	if (zoneServer == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	bool stopOnly = (song == "sound/music_silence.snd" || song == "" || song == "stop");
+	uint32 musicianOmniCrc = STRING_HASHCODE("object/tangible/terminal/terminal_musician_ommni_box.iff");
+
+	// Clean up old musician omni-box sources before starting/stopping.
+	// Match by exact server template CRC instead of relying only on Jukebox casting.
+	int cleaned = 0;
+	SortedVector<TreeEntry*> closeObjects;
+	zone->getInRangeObjects(realObject->getWorldPositionX(), realObject->getWorldPositionZ(), realObject->getWorldPositionY(), 64.f, &closeObjects, true);
+
+	for (int i = 0; i < closeObjects.size(); ++i) {
+		SceneObject* sceneObject = cast<SceneObject*>(closeObjects.get(i));
+
+		if (sceneObject == nullptr) {
+			continue;
+		}
+
+		if (sceneObject->getServerObjectCRC() != musicianOmniCrc) {
+			continue;
+		}
+
+		if (realObject->getParentID() != 0 && sceneObject->getParentID() != realObject->getParentID()) {
+			continue;
+		}
+
+		Jukebox* candidate = cast<Jukebox*>(sceneObject);
+
+		if (candidate != nullptr) {
+			Locker oldLocker(candidate);
+			candidate->stopPlaying();
+		}
+
+		sceneObject->destroyObjectFromWorld(true);
+		sceneObject->destroyObjectFromDatabase(true);
+
+		cleaned++;
+	}
+
+	// Stop Music should clear old sources and not spawn a new box.
+	// Return success even if no source was found, so the NPC does not report a false failure.
+	if (stopOnly) {
+		lua_pushinteger(L, 1);
+		return 1;
+	}
+
+	ManagedReference<SceneObject*> sceneObject = zoneServer->createObject(STRING_HASHCODE("object/tangible/terminal/terminal_musician_ommni_box.iff"), 0);
+
+	if (sceneObject == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	ManagedReference<Jukebox*> jbox = sceneObject.castTo<Jukebox*>();
+
+	if (jbox == nullptr) {
+		sceneObject->destroyObjectFromWorld(true);
+		sceneObject->destroyObjectFromDatabase(true);
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	{
+		Locker createLocker(jbox);
+
+		jbox->initializePosition(realObject->getPositionX(), realObject->getPositionZ(), realObject->getPositionY());
+
+		uint64 parentID = realObject->getParentID();
+
+		if (parentID != 0) {
+			ManagedReference<SceneObject*> parent = zoneServer->getObject(parentID);
+
+			if (parent != nullptr && parent->isCellObject()) {
+				parent->transferObject(jbox, -1);
+			} else {
+				zone->transferObject(jbox, -1, true);
+			}
+		} else {
+			zone->transferObject(jbox, -1, true);
+		}
+
+		jbox->setCustomObjectName("Musician Buffer Music Source", false);
+
+		// Explicit init, then set range, then mimic SUI callback.
+		jbox->notifyInsertToZone(zone);
+
+		if (parentID != 0) {
+			jbox->setRadius(Jukebox::INDOOR_RADIUS);
+		} else {
+			jbox->setRadius(Jukebox::OUTDOOR_RADIUS);
+		}
+
+		jbox->stopPlaying();
+		jbox->startPlaying(song);
+
+		// Immediate refresh for players already standing still near the source.
+		// The real omni-box jukebox active area handles fade/range once players move/enter/exit,
+		// but this prevents needing to move first before hearing the selected song.
+		float refreshRadius = (parentID != 0) ? Jukebox::INDOOR_RADIUS : Jukebox::OUTDOOR_RADIUS;
+
+		SortedVector<TreeEntry*> nearbyPlayers;
+		zone->getInRangeObjects(realObject->getWorldPositionX(), realObject->getWorldPositionZ(), realObject->getWorldPositionY(), refreshRadius, &nearbyPlayers, true);
+
+		for (int i = 0; i < nearbyPlayers.size(); ++i) {
+			SceneObject* nearbyObject = cast<SceneObject*>(nearbyPlayers.get(i));
+
+			if (nearbyObject == nullptr || !nearbyObject->isPlayerCreature()) {
+				continue;
+			}
+
+			if (parentID != 0 && nearbyObject->getParentID() != parentID) {
+				continue;
+			}
+
+			if (!nearbyObject->isInRange(realObject, refreshRadius)) {
+				continue;
+			}
+
+			CreatureObject* player = nearbyObject->asCreatureObject();
+
+			if (player == nullptr) {
+				continue;
+			}
+
+			player->playMusicMessage(song);
+		}
+	}
+
+	lua_pushinteger(L, 1);
 	return 1;
 }
 

@@ -40,6 +40,7 @@ namespace creature {
 		int sendGroupMessage(lua_State* L);
 		int playMusicMessage(lua_State *L);
 		int playJukeboxMusicNearby(lua_State* L);
+		int controlNearbyJukebox(lua_State* L);
 		int sendNewbieTutorialRequest(lua_State *L);
 		int hasScreenPlayState(lua_State *L);
 		int setScreenPlayState(lua_State *L);
