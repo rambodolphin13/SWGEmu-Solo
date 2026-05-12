@@ -16,6 +16,7 @@
 #include "server/zone/objects/player/PlayerObject.h"
 #include "server/zone/managers/player/PlayerManager.h"
 #include "server/zone/managers/skill/SkillManager.h"
+#include "server/zone/managers/skill/PerformanceManager.h"
 #include "server/zone/objects/tangible/threat/ThreatMap.h"
 #include "server/zone/objects/transaction/TransactionLog.h"
 #include "server/zone/Zone.h"
@@ -131,6 +132,7 @@ Luna<LuaCreatureObject>::RegType LuaCreatureObject::Register[] = {
 		{ "isDancing", &LuaCreatureObject::isDancing},
 		{ "isPlayingMusic", &LuaCreatureObject::isPlayingMusic},
 		{ "getPerformanceName", &LuaCreatureObject::getPerformanceName},
+		{ "startDance", &LuaCreatureObject::startDance},
 		{ "getWalkSpeed", &LuaCreatureObject::getWalkSpeed },
 		{ "isAttackableBy", &LuaCreatureObject::isAttackableBy },
 		{ "getSpecies", &LuaCreatureObject::getSpecies },
@@ -983,6 +985,50 @@ int LuaCreatureObject::getPerformanceName(lua_State* L) {
 	else
 		lua_pushstring(L, session->getPerformanceName().toCharArray());
 
+	return 1;
+}
+
+
+int LuaCreatureObject::startDance(lua_State* L) {
+	const char* danceArg = lua_tostring(L, -1);
+
+	if (danceArg == nullptr) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	String danceName = danceArg;
+
+	if (danceName.isEmpty()) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	PerformanceManager* performanceManager = SkillManager::instance()->getPerformanceManager();
+
+	if (performanceManager == nullptr) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	int performanceIndex = performanceManager->getPerformanceIndex(PerformanceType::DANCE, danceName, 0);
+
+	if (performanceIndex == 0) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	ManagedReference<Facade*> facade = realObject->getActiveSession(SessionFacadeType::ENTERTAINING);
+	ManagedReference<EntertainingSession*> session = dynamic_cast<EntertainingSession*> (facade.get());
+
+	if (session == nullptr) {
+		session = new EntertainingSession(realObject);
+		realObject->addActiveSession(SessionFacadeType::ENTERTAINING, session);
+	}
+
+	session->startDancing(performanceIndex);
+
+	lua_pushboolean(L, true);
 	return 1;
 }
 

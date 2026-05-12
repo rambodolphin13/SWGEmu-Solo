@@ -103,6 +103,7 @@ namespace creature {
 		int isDancing(lua_State* L);
 		int isPlayingMusic(lua_State* L);
 		int getPerformanceName(lua_State* L);
+		int startDance(lua_State* L);
 		int getWalkSpeed(lua_State* L);
 		int isAttackableBy(lua_State* L);
 		int getSpecies(lua_State* L);
