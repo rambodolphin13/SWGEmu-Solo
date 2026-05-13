@@ -13,7 +13,7 @@ musician_buffer = Creature:new {
 	resists = {0,0,0,0,0,0,0,0,0},
 	pvpBitmask = NONE,
 	creatureBitmask = NONE,
-	optionsBitmask = AIENABLED + CONVERSABLE,
+	optionsBitmask = CONVERSABLE,
 	diet = HERBIVORE,
 
 	-- Female cantina-style look. Change this if you find a musician-specific look you prefer.

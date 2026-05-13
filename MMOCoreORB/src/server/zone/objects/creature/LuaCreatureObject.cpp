@@ -25,6 +25,7 @@
 #include "server/zone/objects/mission/MissionObject.h"
 #include "server/zone/managers/mission/MissionManager.h"
 #include "server/zone/objects/tangible/eventperk/Jukebox.h"
+#include "server/zone/objects/tangible/Instrument.h"
 
 const char LuaCreatureObject::className[] = "LuaCreatureObject";
 
@@ -136,6 +137,8 @@ Luna<LuaCreatureObject>::RegType LuaCreatureObject::Register[] = {
 		{ "isPlayingMusic", &LuaCreatureObject::isPlayingMusic},
 		{ "getPerformanceName", &LuaCreatureObject::getPerformanceName},
 		{ "startDance", &LuaCreatureObject::startDance},
+		{ "startMusic", &LuaCreatureObject::startMusic},
+		{ "stopMusicPerformance", &LuaCreatureObject::stopMusicPerformance},
 		{ "getWalkSpeed", &LuaCreatureObject::getWalkSpeed },
 		{ "isAttackableBy", &LuaCreatureObject::isAttackableBy },
 		{ "getSpecies", &LuaCreatureObject::getSpecies },
@@ -562,14 +565,24 @@ int LuaCreatureObject::controlNearbyJukebox(lua_State* L) {
 	}
 
 	bool stopOnly = (song == "sound/music_silence.snd" || song == "" || song == "stop");
-	uint32 musicianOmniCrc = STRING_HASHCODE("object/tangible/terminal/terminal_musician_ommni_box.iff");
 
-	// Clean up old musician omni-box sources before starting/stopping.
-	// Match by exact server template CRC instead of relying only on Jukebox casting.
-	int cleaned = 0;
+		// Stop any current visual music performance on Rinna before changing/removing props.
+	{
+		ManagedReference<Facade*> facade = realObject->getActiveSession(SessionFacadeType::ENTERTAINING);
+		ManagedReference<EntertainingSession*> session = dynamic_cast<EntertainingSession*> (facade.get());
+
+		if (session != nullptr && session->isPlayingMusic()) {
+			session->stopMusic(true);
+		}
+	}
+
+	uint32 musicianOmniCrc = STRING_HASHCODE("object/tangible/terminal/terminal_musician_ommni_box.iff");
+	uint32 nalargonCrc = STRING_HASHCODE("object/tangible/instrument/nalargon.iff");
+
 	SortedVector<TreeEntry*> closeObjects;
 	zone->getInRangeObjects(realObject->getWorldPositionX(), realObject->getWorldPositionZ(), realObject->getWorldPositionY(), 64.f, &closeObjects, true);
 
+	// First stop/remove old omni-jukebox sources.
 	for (int i = 0; i < closeObjects.size(); ++i) {
 		SceneObject* sceneObject = cast<SceneObject*>(closeObjects.get(i));
 
@@ -594,17 +607,115 @@ int LuaCreatureObject::controlNearbyJukebox(lua_State* L) {
 
 		sceneObject->destroyObjectFromWorld(true);
 		sceneObject->destroyObjectFromDatabase(true);
-
-		cleaned++;
 	}
 
-	// Stop Music should clear old sources and not spawn a new box.
-	// Return success even if no source was found, so the NPC does not report a false failure.
+	// Then remove old nalargon cover props after the source is gone.
+	// This keeps the prop hiding the source during cleanup as much as possible.
+	for (int i = 0; i < closeObjects.size(); ++i) {
+		SceneObject* sceneObject = cast<SceneObject*>(closeObjects.get(i));
+
+		if (sceneObject == nullptr) {
+			continue;
+		}
+
+		if (sceneObject->getServerObjectCRC() != nalargonCrc) {
+			continue;
+		}
+
+		if (realObject->getParentID() != 0 && sceneObject->getParentID() != realObject->getParentID()) {
+			continue;
+		}
+
+		String customName = sceneObject->getDisplayedName();
+
+		// Only remove the prop this system created.
+		if (!customName.contains("Rinna's Nalargon")) {
+			continue;
+		}
+
+		sceneObject->destroyObjectFromWorld(true);
+		sceneObject->destroyObjectFromDatabase(true);
+	}
+
+	// Stop Music should only stop and clear old sources/props. Do not spawn new objects.
 	if (stopOnly) {
 		lua_pushinteger(L, 1);
 		return 1;
 	}
 
+	uint64 parentID = realObject->getParentID();
+
+	// Spawn the visible nalargon cover prop FIRST so it can hide the omni-jukebox source.
+	ManagedReference<SceneObject*> nalargonObject = zoneServer->createObject(STRING_HASHCODE("object/tangible/instrument/nalargon.iff"), 0);
+
+	if (nalargonObject != nullptr) {
+		Locker nalargonLocker(nalargonObject);
+
+		// Slightly in front of Rinna in local coords; adjust if needed.
+		float nalargonX = realObject->getPositionX();
+		float nalargonZ = realObject->getPositionZ();
+		float nalargonY = realObject->getPositionY() + 0.35f;
+
+		nalargonObject->initializePosition(nalargonX, nalargonZ, nalargonY);
+
+		// Set direction before transfer so the client receives the correct initial orientation.
+		// This remains relative to each individual Rinna's current facing direction.
+
+		if (parentID != 0) {
+			ManagedReference<SceneObject*> parent = zoneServer->getObject(parentID);
+
+			if (parent != nullptr && parent->isCellObject()) {
+				parent->transferObject(nalargonObject, -1);
+			} else {
+				zone->transferObject(nalargonObject, -1, true);
+			}
+		} else {
+			zone->transferObject(nalargonObject, -1, true);
+		}
+
+		nalargonObject->setCustomObjectName("Rinna's Nalargon", false);
+		Quaternion nalargonDirection = *realObject->getDirection();
+		nalargonDirection = nalargonDirection.rotate(Vector3(0, 1, 0), 180.f);
+
+		nalargonObject->setDirection(nalargonDirection);
+
+		// Start a real nalargon music performance for visual flavor.
+		// The custom omni-jukebox remains the actual audible area/fade source.
+		Instrument* nalargonInstrument = cast<Instrument*>(nalargonObject.get());
+
+		if (nalargonInstrument != nullptr) {
+			// Make this world instrument count as Rinna's playable instrument.
+			// getPlayableInstrument() checks targetID, same parent/cell, range <= 3m, and spawnerPlayer.
+			nalargonInstrument->setSpawnerPlayer(realObject);
+			nalargonInstrument->setDirection(nalargonDirection);
+			realObject->setTargetID(nalargonInstrument->getObjectID(), false);
+
+			PerformanceManager* performanceManager = SkillManager::instance()->getPerformanceManager();
+
+			if (performanceManager != nullptr) {
+				int performanceIndex = performanceManager->getPerformanceIndex(PerformanceType::MUSIC, "western", Instrument::NALARGON);
+
+				if (performanceIndex == 0) {
+					performanceIndex = performanceManager->getPerformanceIndex(PerformanceType::MUSIC, "starwars", Instrument::NALARGON);
+				}
+
+				if (performanceIndex != 0) {
+					ManagedReference<Facade*> facade = realObject->getActiveSession(SessionFacadeType::ENTERTAINING);
+					ManagedReference<EntertainingSession*> session = dynamic_cast<EntertainingSession*> (facade.get());
+
+					if (session == nullptr) {
+						session = new EntertainingSession(realObject);
+						realObject->addActiveSession(SessionFacadeType::ENTERTAINING, session);
+					}
+
+					session->startPlayingMusic(performanceIndex, nalargonInstrument);
+				}
+			}
+		}
+
+	}
+
+	// Spawn the functional custom omni-jukebox SECOND.
 	ManagedReference<SceneObject*> sceneObject = zoneServer->createObject(STRING_HASHCODE("object/tangible/terminal/terminal_musician_ommni_box.iff"), 0);
 
 	if (sceneObject == nullptr) {
@@ -624,9 +735,8 @@ int LuaCreatureObject::controlNearbyJukebox(lua_State* L) {
 	{
 		Locker createLocker(jbox);
 
+		// Place source at Rinna's position. The larger nalargon prop should visually cover it.
 		jbox->initializePosition(realObject->getPositionX(), realObject->getPositionZ(), realObject->getPositionY());
-
-		uint64 parentID = realObject->getParentID();
 
 		if (parentID != 0) {
 			ManagedReference<SceneObject*> parent = zoneServer->getObject(parentID);
@@ -642,49 +752,17 @@ int LuaCreatureObject::controlNearbyJukebox(lua_State* L) {
 
 		jbox->setCustomObjectName("Musician Buffer Music Source", false);
 
-		// Explicit init, then set range, then mimic SUI callback.
 		jbox->notifyInsertToZone(zone);
 
+		// Custom musician omni-box jukebox range.
 		if (parentID != 0) {
-			jbox->setRadius(Jukebox::INDOOR_RADIUS);
+			jbox->setRadius(64.f);
 		} else {
-			jbox->setRadius(Jukebox::OUTDOOR_RADIUS);
+			jbox->setRadius(192.f);
 		}
 
 		jbox->stopPlaying();
 		jbox->startPlaying(song);
-
-		// Immediate refresh for players already standing still near the source.
-		// The real omni-box jukebox active area handles fade/range once players move/enter/exit,
-		// but this prevents needing to move first before hearing the selected song.
-		float refreshRadius = (parentID != 0) ? Jukebox::INDOOR_RADIUS : Jukebox::OUTDOOR_RADIUS;
-
-		SortedVector<TreeEntry*> nearbyPlayers;
-		zone->getInRangeObjects(realObject->getWorldPositionX(), realObject->getWorldPositionZ(), realObject->getWorldPositionY(), refreshRadius, &nearbyPlayers, true);
-
-		for (int i = 0; i < nearbyPlayers.size(); ++i) {
-			SceneObject* nearbyObject = cast<SceneObject*>(nearbyPlayers.get(i));
-
-			if (nearbyObject == nullptr || !nearbyObject->isPlayerCreature()) {
-				continue;
-			}
-
-			if (parentID != 0 && nearbyObject->getParentID() != parentID) {
-				continue;
-			}
-
-			if (!nearbyObject->isInRange(realObject, refreshRadius)) {
-				continue;
-			}
-
-			CreatureObject* player = nearbyObject->asCreatureObject();
-
-			if (player == nullptr) {
-				continue;
-			}
-
-			player->playMusicMessage(song);
-		}
 	}
 
 	lua_pushinteger(L, 1);
@@ -1226,6 +1304,114 @@ int LuaCreatureObject::getPerformanceName(lua_State* L) {
 	return 1;
 }
 
+
+int LuaCreatureObject::startMusic(lua_State* L) {
+	const char* musicArg = lua_tostring(L, -1);
+
+	if (musicArg == nullptr) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	String musicName = musicArg;
+
+	if (musicName.isEmpty()) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	PerformanceManager* performanceManager = SkillManager::instance()->getPerformanceManager();
+
+	if (performanceManager == nullptr) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	int instrumentType = Instrument::NALARGON;
+	int performanceIndex = performanceManager->getPerformanceIndex(PerformanceType::MUSIC, musicName, instrumentType);
+
+	if (performanceIndex == 0) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	ManagedReference<Instrument*> instrument = realObject->getPlayableInstrument();
+
+	if (instrument == nullptr || instrument->getInstrumentType() != instrumentType) {
+		ZoneServer* zoneServer = realObject->getZoneServer();
+		Zone* zone = realObject->getZone();
+
+		if (zoneServer == nullptr || zone == nullptr) {
+			lua_pushboolean(L, false);
+			return 1;
+		}
+
+		ManagedReference<SceneObject*> sceneObject = zoneServer->createObject(STRING_HASHCODE("object/tangible/instrument/nalargon.iff"), 0);
+
+		if (sceneObject == nullptr) {
+			lua_pushboolean(L, false);
+			return 1;
+		}
+
+		instrument = sceneObject.castTo<Instrument*>();
+
+		if (instrument == nullptr) {
+			sceneObject->destroyObjectFromWorld(true);
+			sceneObject->destroyObjectFromDatabase(true);
+			lua_pushboolean(L, false);
+			return 1;
+		}
+
+		Locker locker(instrument);
+
+		instrument->initializePosition(realObject->getPositionX(), realObject->getPositionZ(), realObject->getPositionY());
+
+		uint64 parentID = realObject->getParentID();
+
+		if (parentID != 0) {
+			ManagedReference<SceneObject*> parent = zoneServer->getObject(parentID);
+
+			if (parent != nullptr && parent->isCellObject()) {
+				parent->transferObject(instrument, -1);
+			} else {
+				zone->transferObject(instrument, -1, true);
+			}
+		} else {
+			zone->transferObject(instrument, -1, true);
+		}
+
+		instrument->setSpawnerPlayer(realObject);
+		instrument->setCustomObjectName("Rinna's Nalargon", false);
+		instrument->setDirection(*realObject->getDirection());
+
+		realObject->setTargetID(instrument->getObjectID(), false);
+	}
+
+	ManagedReference<Facade*> facade = realObject->getActiveSession(SessionFacadeType::ENTERTAINING);
+	ManagedReference<EntertainingSession*> session = dynamic_cast<EntertainingSession*> (facade.get());
+
+	if (session == nullptr) {
+		session = new EntertainingSession(realObject);
+		realObject->addActiveSession(SessionFacadeType::ENTERTAINING, session);
+	}
+
+	session->startPlayingMusic(performanceIndex, instrument);
+
+	lua_pushboolean(L, realObject->isPlayingMusic());
+	return 1;
+}
+
+int LuaCreatureObject::stopMusicPerformance(lua_State* L) {
+	ManagedReference<Facade*> facade = realObject->getActiveSession(SessionFacadeType::ENTERTAINING);
+	ManagedReference<EntertainingSession*> session = dynamic_cast<EntertainingSession*> (facade.get());
+
+	if (session != nullptr && session->isPlayingMusic()) {
+		session->stopMusic(true);
+	}
+
+	lua_pushboolean(L, !realObject->isPlayingMusic());
+	return 1;
+}
 
 int LuaCreatureObject::startDance(lua_State* L) {
 	const char* danceArg = lua_tostring(L, -1);
