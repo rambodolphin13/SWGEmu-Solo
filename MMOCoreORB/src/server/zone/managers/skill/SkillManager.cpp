@@ -807,10 +807,12 @@ void SkillManager::updateXpLimits(PlayerObject* ghost) {
 		if (skillBox == nullptr || skillBox->getXpCap() == 0)
 			continue;
 
+		int boostedXpCap = skillBox->getXpCap() * 10;
+
 		if (!xpTypeCapList->contains(skillBox->getXpType())) {
-			xpTypeCapList->put(skillBox->getXpType(), skillBox->getXpCap());
-		} else if (xpTypeCapList->get(skillBox->getXpType()) < skillBox->getXpCap()) {
-			xpTypeCapList->get(skillBox->getXpType()) = skillBox->getXpCap();
+			xpTypeCapList->put(skillBox->getXpType(), boostedXpCap);
+		} else if (xpTypeCapList->get(skillBox->getXpType()) < boostedXpCap) {
+			xpTypeCapList->get(skillBox->getXpType()) = boostedXpCap;
 		}
 	}
 

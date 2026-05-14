@@ -20,6 +20,8 @@ public:
 		PICKEDANDEMPTY = 3
 	};
 
+	static constexpr float AREA_LOOT_RANGE = 32.f;
+
 	LootCommand(const String& name, ZoneProcessServer* server)
 		: QueueCommand(name, server) {
 
@@ -36,6 +38,24 @@ public:
 
 		if (zoneServer == nullptr)
 			return GENERALERROR;
+
+		String lootArgs = arguments.toString();
+		lootArgs.toLowerCase();
+
+		// Solo/QOL area loot. Use /loot all or /loot area to loot all owned AI corpses nearby.
+		if (lootArgs.beginsWith("all") || lootArgs.beginsWith("area")) {
+			int lootedCorpses = areaLoot(creature, zoneServer, AREA_LOOT_RANGE);
+
+			if (lootedCorpses > 0) {
+				StringBuffer msg;
+				msg << "Area looted " << lootedCorpses << " corpse" << (lootedCorpses == 1 ? "." : "s.");
+				creature->sendSystemMessage(msg.toString());
+			} else {
+				creature->sendSystemMessage("No lootable corpses found nearby.");
+			}
+
+			return SUCCESS;
+		}
 
 		ManagedReference<SceneObject*> targetObject = zoneServer->getObject(target);
 
@@ -57,7 +77,7 @@ public:
 			return GENERALERROR;
 		}
 
-		bool lootAll = arguments.toString().beginsWith("all");
+		bool lootAll = false;
 
 		// Get the corpse's inventory.
 		SceneObject* lootContainer = agent->getSlottedObject("inventory");
@@ -145,6 +165,59 @@ public:
 			task->execute();
 
 		return SUCCESS;
+	}
+
+	int areaLoot(CreatureObject* creature, ZoneServer* zoneServer, float range) const {
+		Zone* zone = creature->getZone();
+
+		if (zone == nullptr)
+			return 0;
+
+		PlayerManager* playerManager = zoneServer->getPlayerManager();
+
+		if (playerManager == nullptr)
+			return 0;
+
+		auto inRange = SortedVector<ManagedReference<TreeEntry*> >();
+		inRange.setAllowDuplicateInsertPlan();
+
+		zone->getInRangeObjects(creature->getWorldPositionX(), creature->getWorldPositionZ(), creature->getWorldPositionY(), range, &inRange, true);
+
+		int lootedCorpses = 0;
+
+		for (int i = 0; i < inRange.size(); ++i) {
+			SceneObject* sceneObject = static_cast<SceneObject*>(inRange.get(i).get());
+
+			if (sceneObject == nullptr || !sceneObject->isAiAgent())
+				continue;
+
+			AiAgent* agent = sceneObject->asAiAgent();
+
+			if (agent == nullptr || !agent->isDead() || creature->isDead())
+				continue;
+
+			if (!checkDistance(agent, creature, range))
+				continue;
+
+			SceneObject* lootContainer = agent->getSlottedObject("inventory");
+
+			if (lootContainer == nullptr)
+				continue;
+
+			const ContainerPermissions* permissions = lootContainer->getContainerPermissions();
+
+			if (permissions == nullptr)
+				continue;
+
+			// Only area-loot corpses owned by this player. This avoids bypassing group loot rules.
+			if (permissions->getOwnerID() != creature->getObjectID())
+				continue;
+
+			playerManager->lootAll(creature, agent);
+			++lootedCorpses;
+		}
+
+		return lootedCorpses;
 	}
 
 	int pickupOwnedItems(AiAgent* ai, CreatureObject* creature, SceneObject* lootContainer) const {
