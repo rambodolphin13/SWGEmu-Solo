@@ -199,6 +199,8 @@ Core3 = {
 		"data_sample_01.tre",
 		"data_sample_00.tre",
 		"data_music_00.tre",
+		"bottom_house_assets.tre",
+		"top_house_assets.tre",
 		"bottom.tre"
 	},
 
