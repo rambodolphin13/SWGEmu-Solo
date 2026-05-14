@@ -299,8 +299,7 @@ public:
 			statePack->decreaseUseCount();
 		}
 
-		if (creatureTarget != creature && !creatureTarget->isPet())
-			awardXp(creature, "medical", 50); //No experience for healing yourself or pets.
+		awardXp(creature, "medical", 50); // Solo QoL: allow XP from healing your own state and pets.
 
 		doAnimations(creature, creatureTarget);
 

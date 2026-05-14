@@ -420,8 +420,7 @@ public:
 			enhancePack->decreaseUseCount();
 		}
 
-		if (patient->getObjectID() != enhancer->getObjectID())
-			awardXp(enhancer, "medical", amountEnhanced); // No experience for healing yourself.
+		awardXp(enhancer, "medical", amountEnhanced); // Solo QoL: allow XP from enhancing yourself and pets.
 
 		doAnimations(enhancer, patient);
 

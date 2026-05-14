@@ -259,8 +259,7 @@ public:
 
 		sendCureMessage(creature, creatureTarget);
 
-		if (creatureTarget != creature && !creatureTarget->isPet())
-			awardXp(creature, "medical", 50); //No experience for healing yourself or pets.
+		awardXp(creature, "medical", 50); // Solo QoL: allow XP from curing yourself and pets.
 
 		checkForTef(creature, creatureTarget);
 	}
@@ -412,8 +411,7 @@ public:
 			curePack->decreaseUseCount();
 		}
 
-		if (targetCreature != creature && !targetCreature->isPet())
-			awardXp(creature, "medical", 50); //No experience for healing yourself or pets.
+		awardXp(creature, "medical", 50); // Solo QoL: allow XP from curing yourself and pets.
 
 		if (curePack->isArea()) {
 			if (creature != targetCreature)
