@@ -716,6 +716,11 @@ void FactoryObjectImplementation::createNewObject() {
 		return;
 	}
 
+	// Solo QoL: increase factory crate capacity for easier bulk production.
+	// Single-item outputs are left alone, but normal factory crates are raised to 1000.
+	if (crateSize > 1 && crateSize < 1000)
+		crateSize = 1000;
+
 	if (crateSize > 1) {
 		String crateType = schematic->getFactoryCrateType();
 
