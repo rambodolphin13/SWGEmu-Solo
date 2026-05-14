@@ -2104,7 +2104,12 @@ void PlayerManagerImplementation::disseminateExperience(TangibleObject* destruct
 				xpAmount = 1;
 			} else {
 				xpAmount = Math::min(xpAmount, (float)attacker->getLevel() * 50.f);
-				xpAmount /= totalPets;
+				// Solo QoL: soften the Creature Handler XP penalty from multiple active pets.
+				// Stock behavior divides XP by every active pet, which becomes too harsh with
+				// increased solo pet limits. This keeps a penalty for large packs, but makes
+				// CH progression more reasonable.
+				float petXpDivisor = Math::max(1.0f, totalPets / 2.0f);
+				xpAmount = (int)(xpAmount / petXpDivisor);
 
 				if (winningFaction != Factions::FACTIONNEUTRAL && winningFaction == attacker->getFaction())
 					xpAmount *= gcwBonus;
