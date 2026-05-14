@@ -227,7 +227,9 @@ public:
 						targetAgent->addBuff(buff);
 
 						if (!targetAgent->isEventMob()) {
-							totalXP += targetAgent->getLevel() * 15;
+							// Solo QoL: increase trapping XP so Scout and Ranger trapping
+							// progression is reasonable without excessive trap grinding.
+							totalXP += targetAgent->getLevel() * 45;
 						}
 					}
 				}

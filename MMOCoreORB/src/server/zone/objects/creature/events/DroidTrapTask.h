@@ -60,7 +60,8 @@ public:
 			//Players get the full trap xp, as per http://www.swgemu.com/archive/scrapbookv51/data/20070127195942/
 			// Players get 1/2 rating according to http://wiki.swganh.org/index.php/Scout_Trap_Projectile_Unit_Module_Usage_%28Game_Mechanics%29
 			// i learn towards the offical forum posts
-			int xp = target->getLevel() * 15;
+			// Solo QoL: keep droid trap module XP aligned with regular trap XP.
+			int xp = target->getLevel() * 45;
 			ManagedReference<PlayerManager*> playerManager = player->getZoneServer()->getPlayerManager();
 			if(playerManager != nullptr) {
 				locker.release(); // release the target
