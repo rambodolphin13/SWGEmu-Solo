@@ -174,6 +174,16 @@ void SlicingSessionImplementation::handleMenuSelect(CreatureObject* pl, byte men
 
 	uint8 progress = getProgress();
 
+	// Solo QoL: final slice-type choice for weapon and armor slicing.
+	if (choosingSliceType) {
+		if (menuID < 10 || menuID > 12)
+			return;
+
+		selectedSliceType = menuID - 10;
+		handleSlice(suiBox);
+		return;
+	}
+
 	if (progress == 0) {
 		switch(menuID) {
 		case 0: {
@@ -547,6 +557,29 @@ void SlicingSessionImplementation::handleSlice(SuiListBox* suiBox) {
 	player->getPlayerObject()->addSuiBox(suiBox);
 	player->sendMessage(suiBox->generateMessage());
 
+	if ((tangibleObject->isWeaponObject() || tangibleObject->isArmorObject()) && !choosingSliceType) {
+		suiBox->removeAllMenuItems();
+		suiBox->setCancelButton(true, "@cancel");
+
+		if (tangibleObject->isWeaponObject()) {
+			suiBox->setPromptText("Choose the type of weapon slice to perform.");
+			suiBox->addMenuItem("Random weapon slice", 10);
+			suiBox->addMenuItem("Damage slice", 11);
+			suiBox->addMenuItem("Speed slice", 12);
+		} else {
+			suiBox->setPromptText("Choose the type of armor slice to perform.");
+			suiBox->addMenuItem("Random armor slice", 10);
+			suiBox->addMenuItem("Effectiveness slice", 11);
+			suiBox->addMenuItem("Encumbrance slice", 12);
+		}
+
+		choosingSliceType = true;
+
+		player->getPlayerObject()->addSuiBox(suiBox);
+		player->sendMessage(suiBox->generateMessage());
+		return;
+	}
+
 	if (tangibleObject->isContainerObject() || tangibleObject->getGameObjectType() == SceneObjectType::PLAYERLOOTCRATE) {
 		handleContainerSlice();
 		playerManager->awardExperience(player, "slicing", 500, true); // Container Slice XP
@@ -613,12 +646,22 @@ void SlicingSessionImplementation::handleWeaponSlice() {
 
 	uint8 percentage = System::random(max - min) + min;
 
-	switch(System::random(1)) {
-	case 0:
+	// selectedSliceType:
+	// 0 = random, 1 = damage, 2 = speed
+	uint8 sliceType = selectedSliceType;
+
+	if (sliceType == 0)
+		sliceType = System::random(1) + 1;
+
+	switch(sliceType) {
+	case 1:
 		handleSliceDamage(percentage);
 		break;
-	case 1:
+	case 2:
 		handleSliceSpeed(percentage);
+		break;
+	default:
+		handleSliceDamage(percentage);
 		break;
 	}
 }
@@ -697,21 +740,29 @@ void SlicingSessionImplementation::handleArmorSlice() {
 	if (tangibleObject == nullptr || player == nullptr)
 		return;
 
-	uint8 sliceType = System::random(1);
+	// selectedSliceType:
+	// 0 = random, 1 = effectiveness, 2 = encumbrance
+	uint8 sliceType = selectedSliceType;
+
+	if (sliceType == 0)
+		sliceType = System::random(1) + 1;
+
+	bool effectivenessSlice = sliceType == 1;
+
 	int sliceSkill = getSlicingSkill(player);
 	uint8 min = 0;
 	uint8 max = 0;
 
 	switch (sliceSkill) {
 	case 5:
-		min += (sliceType == 0) ? 6 : 5;
+		min += effectivenessSlice ? 6 : 5;
 		max += 5;
 	case 4:
-		min += (sliceType == 0) ? 0 : 10;
+		min += effectivenessSlice ? 0 : 10;
 		max += 10;
 	case 3:
 		min += 5;
-		max += (sliceType == 0) ? 20 : 30;
+		max += effectivenessSlice ? 20 : 30;
 		break;
 	default:
 		return;
@@ -719,14 +770,10 @@ void SlicingSessionImplementation::handleArmorSlice() {
 
 	uint8 percent = System::random(max - min) + min;
 
-	switch (sliceType) {
-	case 0:
+	if (effectivenessSlice)
 		handleSliceEffectiveness(percent);
-		break;
-	case 1:
+	else
 		handleSliceEncumbrance(percent);
-		break;
-	}
 }
 
 void SlicingSessionImplementation::handleSliceEncumbrance(uint8 percent) {

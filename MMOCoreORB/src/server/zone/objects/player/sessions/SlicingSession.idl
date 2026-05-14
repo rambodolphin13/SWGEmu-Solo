@@ -38,11 +38,18 @@ class SlicingSession extends Facade {
 	protected boolean baseSlice;
 	protected boolean keypadSlice;
 
+	// Solo QoL: used to add a final menu that lets smugglers choose slice type.
+	protected boolean choosingSliceType;
+	protected byte selectedSliceType;
+
 	public SlicingSession(CreatureObject parent) {
 		Logger.setLoggingName("SlicingSession");
 		Logger.setLogging(true);
 
 		initializeSession();
+
+		choosingSliceType = false;
+		selectedSliceType = 0;
 
 	}
 
@@ -59,6 +66,8 @@ class SlicingSession extends Facade {
 	public int clearSession() {
 		player = null;
 		tangibleObject = null;
+		choosingSliceType = false;
+		selectedSliceType = 0;
 
 		return 0;
 	}
