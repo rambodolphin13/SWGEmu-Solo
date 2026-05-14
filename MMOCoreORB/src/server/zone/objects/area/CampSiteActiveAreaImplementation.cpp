@@ -245,10 +245,17 @@ bool CampSiteActiveAreaImplementation::despawnCamp() {
 
 		int amount = 0;
 		int campXp = campStructureData->getExperience();
+
+		// Solo QoL: increase camp/survival XP payout so Scout and Ranger
+		// progression is reasonable without needing other players in camp.
+		const int soloCampXpMultiplier = 5;
+
 		amount = (int)(campXp * durationUsed);
 
-		amount += (int)((visitors.size() -1) * (campXp / 30) * durationUsed);
+		amount += (int)((visitors.size() - 1) * (campXp / 30) * durationUsed);
 		amount += (int)(currentXp * durationUsed);
+
+		amount *= soloCampXpMultiplier;
 
 		playerManager->awardExperience(campOwner, "camp", amount, true);
 	}
