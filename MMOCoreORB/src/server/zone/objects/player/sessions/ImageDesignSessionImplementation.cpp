@@ -300,10 +300,8 @@ void ImageDesignSessionImplementation::updateImageDesign(CreatureObject* updater
 		PlayerManager* playerManager = strongReferenceDesigner->getZoneServer()->getPlayerManager();
 
 		if (playerManager != nullptr && xpGranted > 0) {
-			if (strongReferenceDesigner == strongReferenceTarget) {
-				xpGranted /= 2;
-			}
-
+			// Solo QoL: allow self image design to grant full XP so Image Designer
+			// can be progressed reasonably on a solo/low-population server.
 			playerManager->awardExperience(strongReferenceDesigner, "imagedesigner", xpGranted, true);
 		}
 
