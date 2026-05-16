@@ -343,3 +343,6 @@ includeFile("../custom_scripts/screenplays/convos/structure_deed_vendor_conv.lua
 includeFile("../custom_scripts/screenplays/convos/vehicle_deed_vendor_conv.lua")
 includeFile("../custom_scripts/screenplays/convos/starship_vendor_conv.lua")
 includeFile("../custom_scripts/screenplays/convos/crafting_vendor_conv.lua")
+includeFile("../custom_scripts/screenplays/convos/consumables_vendor_conv.lua")
+includeFile("../custom_scripts/screenplays/convos/decor_vendor_conv.lua")
+includeFile("../custom_scripts/screenplays/convos/veteran_reward_vendor_conv.lua")
