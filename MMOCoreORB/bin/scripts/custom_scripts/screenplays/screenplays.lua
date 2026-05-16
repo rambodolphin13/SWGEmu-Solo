@@ -20,3 +20,5 @@ includeFile("../custom_scripts/screenplays/convos/vehicle_deed_vendor_conv_handl
 includeFile("../custom_scripts/screenplays/vehicle_deed_vendor.lua")
 includeFile("../custom_scripts/screenplays/convos/starship_vendor_conv_handler.lua")
 includeFile("../custom_scripts/screenplays/starship_vendor.lua")
+includeFile("../custom_scripts/screenplays/convos/crafting_vendor_conv_handler.lua")
+includeFile("../custom_scripts/screenplays/crafting_vendor.lua")
