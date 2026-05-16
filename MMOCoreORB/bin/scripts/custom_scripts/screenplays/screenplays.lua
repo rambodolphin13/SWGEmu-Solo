@@ -16,3 +16,7 @@ includeFile("../custom_scripts/screenplays/events/doctor_droid_spawns.lua")
 --Custom Vendors Structure
 includeFile("../custom_scripts/screenplays/convos/structure_deed_vendor_conv_handler.lua")
 includeFile("../custom_scripts/screenplays/structure_deed_vendor.lua")
+includeFile("../custom_scripts/screenplays/convos/vehicle_deed_vendor_conv_handler.lua")
+includeFile("../custom_scripts/screenplays/vehicle_deed_vendor.lua")
+includeFile("../custom_scripts/screenplays/convos/starship_vendor_conv_handler.lua")
+includeFile("../custom_scripts/screenplays/starship_vendor.lua")
