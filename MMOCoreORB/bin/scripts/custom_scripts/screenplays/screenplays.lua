@@ -9,6 +9,10 @@ includeFile("../custom_scripts/screenplays/events/musician_buffer_performance.lu
 includeFile("../custom_scripts/screenplays/events/musician_buffer_music_maintenance.lua")
 includeFile("../custom_scripts/screenplays/events/musician_buffer_spawns.lua")
 
-
+--Doctor Droid
 includeFile("../custom_scripts/mobile/conversations/handlers/doctor_droid_conv_handler.lua")
 includeFile("../custom_scripts/screenplays/events/doctor_droid_spawns.lua")
+
+--Custom Vendors Structure
+includeFile("../custom_scripts/screenplays/convos/structure_deed_vendor_conv_handler.lua")
+includeFile("../custom_scripts/screenplays/structure_deed_vendor.lua")
