@@ -6,11 +6,76 @@
  */
 
 #include "LuaTangibleObject.h"
+#include "server/zone/objects/tangible/wearables/ArmorObject.h"
 #include "server/zone/objects/tangible/TangibleObject.h"
 #include "templates/params/PaletteColorCustomizationVariable.h"
 #include "templates/customization/AssetCustomizationManagerTemplate.h"
 #include "templates/appearance/PaletteTemplate.h"
 #include "server/zone/objects/player/FactionStatus.h"
+
+
+int LuaTangibleObject::setUseCount(lua_State* L) {
+	uint32 count = lua_tointeger(L, -1);
+
+	if (count < 1)
+		count = 1;
+
+	Locker locker(realObject);
+
+	realObject->setUseCount(count, true);
+
+	return 0;
+}
+
+int LuaTangibleObject::getUseCount(lua_State* L) {
+	if (realObject == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	lua_pushinteger(L, realObject->getUseCount());
+
+	return 1;
+}
+
+
+int LuaTangibleObject::boostArmorResists(lua_State* L) {
+	float value = lua_tonumber(L, -1);
+
+	if (value < 0)
+		value = 0;
+
+	if (value > 80)
+		value = 80;
+
+	ArmorObject* armor = dynamic_cast<ArmorObject*>(realObject);
+
+	if (armor == nullptr) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	Locker locker(armor);
+
+	armor->setKinetic(value);
+	armor->setEnergy(value);
+	armor->setElectricity(value);
+	armor->setStun(value);
+	armor->setBlast(value);
+	armor->setHeat(value);
+	armor->setCold(value);
+	armor->setAcid(value);
+	armor->setLightSaber(value);
+
+	armor->setConditionDamage(0);
+
+	if (armor->getMaxCondition() < 100000) {
+		armor->setMaxCondition(100000);
+	}
+
+	lua_pushboolean(L, true);
+	return 1;
+}
 
 const char LuaTangibleObject::className[] = "LuaTangibleObject";
 
@@ -58,6 +123,9 @@ Luna<LuaTangibleObject>::RegType LuaTangibleObject::Register[] = {
 		{ "getMainDefender", &LuaTangibleObject::getMainDefender},
 		{ "getConditionDamage", &LuaTangibleObject::getConditionDamage},
 		{ "isActivated", &LuaTangibleObject::isActivated},
+		{ "setUseCount", &LuaTangibleObject::setUseCount },
+		{ "getUseCount", &LuaTangibleObject::getUseCount },
+		{ "boostArmorResists", &LuaTangibleObject::boostArmorResists },
 		{ 0, 0 }
 };
 

@@ -38,3 +38,7 @@ includeFile("../custom_scripts/screenplays/droid_vendor.lua")
 --Jawa Buyer
 includeFile("../custom_scripts/screenplays/convos/jawa_buyer_conv_handler.lua")
 includeFile("../custom_scripts/screenplays/jawa_buyer.lua")
+
+--Jawa Black Market Vendor
+includeFile("../custom_scripts/screenplays/convos/jawa_black_market_vendor_conv_handler.lua")
+includeFile("../custom_scripts/screenplays/jawa_black_market_vendor.lua")

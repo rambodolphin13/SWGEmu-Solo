@@ -349,3 +349,4 @@ includeFile("../custom_scripts/screenplays/convos/veteran_reward_vendor_conv.lua
 includeFile("../custom_scripts/screenplays/convos/weapon_armor_vendor_conv.lua")
 includeFile("../custom_scripts/screenplays/convos/droid_vendor_conv.lua")
 includeFile("../custom_scripts/screenplays/convos/jawa_buyer_conv.lua")
+includeFile("../custom_scripts/screenplays/convos/jawa_black_market_vendor_conv.lua")

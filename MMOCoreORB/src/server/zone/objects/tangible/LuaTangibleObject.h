@@ -45,6 +45,9 @@ namespace tangible {
 		int getPaletteColorCount(lua_State *L);
 		int setConditionDamage(lua_State *L);
 		int setMaxCondition(lua_State *L);
+		int setUseCount(lua_State *L);
+		int getUseCount(lua_State *L);
+		int boostArmorResists(lua_State *L);
 		int setFaction(lua_State *L);
 		int setFactionStatus(lua_State* L);
 		int getFaction(lua_State *L);

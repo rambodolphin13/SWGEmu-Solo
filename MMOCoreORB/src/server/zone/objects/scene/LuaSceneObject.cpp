@@ -1,3 +1,5 @@
+#include "server/zone/objects/transaction/TransactionLog.h"
+#include "server/zone/managers/loot/LootManager.h"
 #include "server/zone/objects/resource/ResourceContainer.h"
 /*
  * LuaSceneObject.cpp
@@ -32,6 +34,55 @@ int LuaSceneObject::getResourceQuantity(lua_State* L) {
 	}
 
 	lua_pushinteger(L, resourceContainer->getQuantity());
+
+	return 1;
+}
+
+
+int LuaSceneObject::createLootItem(lua_State* L) {
+	if (realObject == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	bool maxCondition = lua_toboolean(L, -1);
+	int level = lua_tointeger(L, -2);
+	const char* lootNameChar = lua_tostring(L, -3);
+
+	if (lootNameChar == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	String lootName = lootNameChar;
+
+	if (level < 1)
+		level = 1;
+
+	auto zone = realObject->getZone();
+
+	if (zone == nullptr || zone->getZoneServer() == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	ManagedReference<LootManager*> lootManager = zone->getZoneServer()->getLootManager();
+
+	if (lootManager == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	TransactionLog trx(realObject, TrxCode::ADMINCOMMAND, uint(0), true);
+	uint64 objectID = lootManager->createLoot(trx, realObject, lootName, level, maxCondition);
+
+	if (objectID == 0) {
+		trx.abort() << "LuaSceneObject::createLootItem failed for loot entry " << lootName << " level " << level;
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	lua_pushinteger(L, objectID);
 
 	return 1;
 }
@@ -132,6 +183,7 @@ Luna<LuaSceneObject>::RegType LuaSceneObject::Register[] = {
 		{ "isPlayerShip", &LuaSceneObject::isPlayerShip },
 		{ "isShipComponent", &LuaSceneObject::isShipComponent },
 		{ "isShipComponentRepairKit", &LuaSceneObject::isShipComponentRepairKit },
+		{ "createLootItem", &LuaSceneObject::createLootItem },
 		{ 0, 0 }
 
 };
