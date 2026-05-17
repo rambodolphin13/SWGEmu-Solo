@@ -28,3 +28,9 @@ includeFile("../custom_scripts/screenplays/convos/decor_vendor_conv_handler.lua"
 includeFile("../custom_scripts/screenplays/decor_vendor.lua")
 includeFile("../custom_scripts/screenplays/convos/veteran_reward_vendor_conv_handler.lua")
 includeFile("../custom_scripts/screenplays/veteran_reward_vendor.lua")
+includeFile("../custom_scripts/screenplays/convos/weapon_armor_vendor_conv_handler.lua")
+includeFile("../custom_scripts/screenplays/weapon_armor_vendor.lua")
+
+--Droid Vendor
+includeFile("../custom_scripts/screenplays/convos/droid_vendor_conv_handler.lua")
+includeFile("../custom_scripts/screenplays/droid_vendor.lua")
