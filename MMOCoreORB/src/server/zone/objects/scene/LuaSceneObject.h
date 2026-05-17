@@ -132,7 +132,8 @@ namespace scene {
 	private:
 		// The pointer to the 'real object' defined in object.cc
 		Reference<SceneObject*> realObject;
-	};
+		int getResourceQuantity(lua_State* L);
+};
 
 }
 }

@@ -1,3 +1,4 @@
+#include "server/zone/objects/resource/ResourceContainer.h"
 /*
  * LuaSceneObject.cpp
  *
@@ -15,6 +16,25 @@
 #include "server/zone/managers/director/ScreenPlayTask.h"
 #include "engine/lua/LuaPanicException.h"
 #include "server/zone/objects/tangible/Container.h"
+
+
+int LuaSceneObject::getResourceQuantity(lua_State* L) {
+	if (realObject == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	ResourceContainer* resourceContainer = realObject.castTo<ResourceContainer*>();
+
+	if (resourceContainer == nullptr) {
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+
+	lua_pushinteger(L, resourceContainer->getQuantity());
+
+	return 1;
+}
 
 const char LuaSceneObject::className[] = "LuaSceneObject";
 
@@ -77,6 +97,7 @@ Luna<LuaSceneObject>::RegType LuaSceneObject::Register[] = {
 		{ "setDirectionalHeading", &LuaSceneObject::setDirectionalHeading },
 		{ "getZoneName", &LuaSceneObject::getZoneName },
 		{ "getTemplateObjectPath", &LuaSceneObject::getTemplateObjectPath },
+		{ "getResourceQuantity", &LuaSceneObject::getResourceQuantity },
 		{ "teleport", &LuaSceneObject::teleport },
 		{ "setObjectMenuComponent", &LuaSceneObject::setObjectMenuComponent },
 		{ "setContainerComponent", &LuaSceneObject::setContainerComponent },

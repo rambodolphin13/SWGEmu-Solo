@@ -29,10 +29,9 @@ function JawaBuyer:openSellMenu(pPlayer, pNpc)
 	local sui = SuiListBox.new("JawaBuyer", "handleSellSelection")
 	sui.setTargetNetworkId(SceneObject(pNpc):getObjectID())
 	sui.setTitle("Jawa Buyer")
-	sui.setPrompt("Choose an item to sell. Resource crates are skipped for now.")
+	sui.setPrompt("Choose an item to sell. Resource crates pay 1 credit per unit.")
 
 	local sellIndex = 0
-	local skippedResources = 0
 	local skippedContainers = 0
 	local inventorySize = SceneObject(pInventory):getContainerObjectsSize()
 
@@ -48,12 +47,10 @@ function JawaBuyer:openSellMenu(pPlayer, pNpc)
 				itemName = templatePath
 			end
 
-			if (self:isResourceContainer(templatePath)) then
-				skippedResources = skippedResources + 1
-			elseif (self:hasContents(pItem)) then
+			if (self:hasContents(pItem)) then
 				skippedContainers = skippedContainers + 1
 			else
-				local value = self:getItemValue(templatePath)
+				local value = self:getItemValueForObject(pItem, templatePath)
 				sui.add(itemName .. " - " .. value .. " credits", tostring(sellIndex))
 				sellIndex = sellIndex + 1
 			end
@@ -63,20 +60,12 @@ function JawaBuyer:openSellMenu(pPlayer, pNpc)
 	if (sellIndex == 0) then
 		local msg = "I do not see anything I can buy right now."
 
-		if (skippedResources > 0) then
-			msg = msg .. " Resource crates are not enabled yet."
-		end
-
 		if (skippedContainers > 0) then
 			msg = msg .. " Containers with contents were skipped."
 		end
 
 		CreatureObject(pPlayer):sendSystemMessage(msg)
 		return
-	end
-
-	if (skippedResources > 0) then
-		CreatureObject(pPlayer):sendSystemMessage("Skipped " .. skippedResources .. " resource crate(s). Resource buying will be added after quantity support.")
 	end
 
 	if (skippedContainers > 0) then
@@ -128,7 +117,7 @@ function JawaBuyer:getSellableItemByIndex(pPlayer, selectedIndex)
 		if (pItem ~= nil) then
 			local templatePath = SceneObject(pItem):getTemplateObjectPath()
 
-			if (not self:isResourceContainer(templatePath) and not self:hasContents(pItem)) then
+			if (not self:hasContents(pItem)) then
 				if (sellIndex == selectedIndex) then
 					return pItem
 				end
@@ -154,17 +143,12 @@ function JawaBuyer:sellItem(pPlayer, pItem)
 		itemName = templatePath
 	end
 
-	if (self:isResourceContainer(templatePath)) then
-		CreatureObject(pPlayer):sendSystemMessage("I am not buying resource crates yet. My scale is not working.")
-		return
-	end
-
 	if (self:hasContents(pItem)) then
 		CreatureObject(pPlayer):sendSystemMessage("I will not buy containers that still have items inside.")
 		return
 	end
 
-	local value = self:getItemValue(templatePath)
+	local value = self:getItemValueForObject(pItem, templatePath)
 
 	itemObject:destroyObjectFromWorld()
 	itemObject:destroyObjectFromDatabase()
@@ -173,13 +157,27 @@ function JawaBuyer:sellItem(pPlayer, pItem)
 	CreatureObject(pPlayer):sendSystemMessage("Sold " .. itemName .. " for " .. value .. " credits.")
 end
 
-function JawaBuyer:getItemValue(templatePath)
-	if (templatePath == nil or templatePath == "") then
+function JawaBuyer:getItemValueForObject(pItem, templatePath)
+	if (pItem == nil) then
 		return self.values.default
 	end
 
 	if (self:isResourceContainer(templatePath)) then
-		return 0
+		local quantity = SceneObject(pItem):getResourceQuantity()
+
+		if (quantity == nil or quantity < 1) then
+			return 0
+		end
+
+		return quantity * self.values.resourcePerUnit
+	end
+
+	return self:getItemValue(templatePath)
+end
+
+function JawaBuyer:getItemValue(templatePath)
+	if (templatePath == nil or templatePath == "") then
+		return self.values.default
 	end
 
 	if (string.find(templatePath, "object/tangible/deed/") ~= nil) then
