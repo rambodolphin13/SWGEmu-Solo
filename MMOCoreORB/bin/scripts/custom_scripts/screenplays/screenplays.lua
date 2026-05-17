@@ -34,3 +34,7 @@ includeFile("../custom_scripts/screenplays/weapon_armor_vendor.lua")
 --Droid Vendor
 includeFile("../custom_scripts/screenplays/convos/droid_vendor_conv_handler.lua")
 includeFile("../custom_scripts/screenplays/droid_vendor.lua")
+
+--Jawa Buyer
+includeFile("../custom_scripts/screenplays/convos/jawa_buyer_conv_handler.lua")
+includeFile("../custom_scripts/screenplays/jawa_buyer.lua")

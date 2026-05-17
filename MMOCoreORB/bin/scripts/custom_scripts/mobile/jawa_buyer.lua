@@ -1,0 +1,36 @@
+jawa_buyer = Creature:new {
+	objectName = "Jawa Buyer",
+	customName = "Jawa Buyer",
+	socialGroup = "jawa",
+	faction = "",
+	level = 1,
+	chanceHit = 0.25,
+	damageMin = 0,
+	damageMax = 0,
+	baseXp = 0,
+	baseHAM = 1000,
+	baseHAMmax = 1000,
+	armor = 0,
+	resists = {0,0,0,0,0,0,0,0,0},
+	meatType = "",
+	meatAmount = 0,
+	hideType = "",
+	hideAmount = 0,
+	boneType = "",
+	boneAmount = 0,
+	milk = 0,
+	tamingChance = 0,
+	ferocity = 0,
+	pvpBitmask = NONE,
+	creatureBitmask = NONE,
+	optionsBitmask = CONVERSABLE + INVULNERABLE,
+	diet = HERBIVORE,
+
+	templates = {"object/mobile/jawa_male.iff"},
+	lootGroups = {},
+	weapons = {},
+	conversationTemplate = "jawaBuyerConvoTemplate",
+	attacks = {}
+}
+
+CreatureTemplates:addCreatureTemplate(jawa_buyer, "jawa_buyer")
