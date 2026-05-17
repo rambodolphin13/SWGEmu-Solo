@@ -13,7 +13,7 @@ dancer_buffer = Creature:new {
 	resists = {0,0,0,0,0,0,0,0,0},
 	pvpBitmask = NONE,
 	creatureBitmask = NONE,
-	optionsBitmask = AIENABLED + CONVERSABLE,
+	optionsBitmask = CONVERSABLE,
 	diet = HERBIVORE,
 
 	templates = {"object/mobile/dressed_diva_human_female_01.iff"},
