@@ -11,6 +11,10 @@
 #include "WeaponObjectMenuComponent.h"
 #include "server/zone/packets/object/ObjectMenuResponse.h"
 #include "server/zone/objects/player/sessions/SlicingSession.h"
+#include "server/zone/managers/radial/RadialOptions.h"
+#include "server/zone/objects/player/sui/inputbox/SuiInputBox.h"
+#include "server/zone/objects/player/sui/callbacks/RenameItemSuiCallback.h"
+#include "server/zone/objects/player/PlayerObject.h"
 
 void WeaponObjectMenuComponent::fillObjectMenuResponse(SceneObject* sceneObject, ObjectMenuResponse* menuResponse, CreatureObject* player) const {
 
@@ -29,6 +33,15 @@ void WeaponObjectMenuComponent::fillObjectMenuResponse(SceneObject* sceneObject,
 
 		if(weapon->getConditionDamage() > 0 && weapon->canRepair(player)) {
 			menuResponse->addRadialMenuItem(70, 3, "@sui:repair"); // Slice
+		}
+	}
+
+	if (player != nullptr && sceneObject != nullptr && sceneObject->isASubChildOf(player)) {
+		ManagedReference<SceneObject*> parent = sceneObject->getParent().get();
+
+		// Rename only inventory/container weapons, not directly equipped weapons.
+		if (parent != nullptr && parent != player) {
+			menuResponse->addRadialMenuItem(RadialOptions::SERVER_MENU8, 3, "Rename Item");
 		}
 	}
 
@@ -91,6 +104,44 @@ int WeaponObjectMenuComponent::handleObjectMenuSelect(SceneObject* sceneObject, 
 
 			return 1;
 		}
+	}
+
+	if (selectedID == RadialOptions::SERVER_MENU8) {
+		if (player == nullptr || sceneObject == nullptr || !sceneObject->isTangibleObject())
+			return 0;
+
+		if (!sceneObject->isASubChildOf(player)) {
+			player->sendSystemMessage("You can only rename items you own.");
+			return 0;
+		}
+
+		ManagedReference<SceneObject*> parent = sceneObject->getParent().get();
+
+		if (parent == player) {
+			player->sendSystemMessage("Unequip the weapon before renaming it.");
+			return 0;
+		}
+
+		ManagedReference<PlayerObject*> ghost = player->getPlayerObject();
+
+		if (ghost == nullptr)
+			return 0;
+
+		ManagedReference<SuiInputBox*> inputBox = new SuiInputBox(player, SuiWindowType::OBJECT_NAME);
+
+		inputBox->setUsingObject(sceneObject);
+		inputBox->setPromptTitle("Rename Weapon");
+		inputBox->setPromptText("Enter a new custom name for this weapon.");
+		inputBox->setDefaultInput(sceneObject->getDisplayedName());
+		inputBox->setMaxInputSize(40);
+		inputBox->setCallback(new RenameItemSuiCallback(player->getZoneServer()));
+		inputBox->setForceCloseDistance(-1);
+
+		ghost->addSuiBox(inputBox);
+
+		player->sendMessage(inputBox->generateMessage());
+
+		return 1;
 	}
 
 	return TangibleObjectMenuComponent::handleObjectMenuSelect(sceneObject, player, selectedID);
