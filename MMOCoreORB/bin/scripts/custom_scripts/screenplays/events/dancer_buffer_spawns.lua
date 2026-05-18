@@ -10,11 +10,10 @@ DancerBufferSpawns = ScreenPlay:new {
 	-- { planet = "tatooine", x = X, z = Z, y = Y, heading = HEADING, cellID = CELL_ID, name = "Vessa Talorin" },
 
 	spawnLocations = {
-		-- Example outdoor test line. Replace this with your desired locations.
-		{ planet = "tatooine", x = 23.439920425415, z = -0.89499443769455, y = -0.26347106695175, heading = 0, cellID = 1082877, name = "Vessa Talorin" },
-		{ planet = "tatooine", x = 3481.61, z = 5, y = -4849.84, heading = 0, cellID = 0, name = "Lyra Venn" },
-		-- Add more below:
-		-- { planet = "tatooine", x = 0.0, z = 0.0, y = 0.0, heading = 0, cellID = 0, name = "Lyra Venn" },
+		
+		{ planet = "tatooine", x = 6.7809844017029, z = -0.89499121904373, y = -9.8907890319824, heading = 0, cellID = 1082877, name = "Vessa Talorin" },
+		{ planet = "tatooine", x = 6.7809844017029, z = -0.89499121904373, y = -9.8907890319824, heading = 0, cellID = 1028647, name = "Roxy McDances" },
+
 	}
 }
 

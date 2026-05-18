@@ -112,6 +112,7 @@ void WearableObjectMenuComponent::fillObjectMenuResponse(SceneObject* sceneObjec
 		// Donor item in inventory/container.
 		if (parent != nullptr && parent != player) {
 			menuResponse->addRadialMenuItem(RadialOptions::SERVER_MENU9, 3, "Transmog Equipped Item With This");
+			menuResponse->addRadialMenuItem(RadialOptions::SERVER_MENU7, 3, "Clear Matching Equipped Transmog");
 		}
 
 		// Equipped item.
@@ -186,6 +187,45 @@ int WearableObjectMenuComponent::handleObjectMenuSelect(SceneObject* sceneObject
 		refreshTransmoggedItemForPlayer(statItem, player);
 
 		player->sendSystemMessage("Transmog applied to the matching equipped item. Donor item was kept.");
+
+		return 1;
+	}
+
+	if (selectedID == RadialOptions::SERVER_MENU7) {
+		if (player == nullptr || !sceneObject->isTangibleObject())
+			return 0;
+
+		ManagedReference<SceneObject*> donor = sceneObject;
+		ManagedReference<SceneObject*> donorParent = donor->getParent().get();
+
+		if (donorParent == player) {
+			player->sendSystemMessage("Use this option from an inventory donor item, not an equipped item.");
+			return 0;
+		}
+
+		if (!hasWearableArrangement(donor)) {
+			player->sendSystemMessage("This item does not appear to match an equipped wearable slot.");
+			return 0;
+		}
+
+		SceneObject* statItem = findEquippedTransmogTarget(player, donor);
+
+		if (statItem == nullptr) {
+			player->sendSystemMessage("No matching equipped item was found to clear.");
+			return 0;
+		}
+
+		SharedObjectTemplate* originalTemplate = statItem->getObjectTemplate();
+
+		if (originalTemplate == nullptr) {
+			player->sendSystemMessage("Could not find the equipped item's original template.");
+			return 0;
+		}
+
+		statItem->setClientObjectCRC(originalTemplate->getClientObjectCRC());
+		refreshTransmoggedItemForPlayer(statItem, player);
+
+		player->sendSystemMessage("Cleared transmog from the matching equipped item.");
 
 		return 1;
 	}

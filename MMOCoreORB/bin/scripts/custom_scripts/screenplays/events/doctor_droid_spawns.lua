@@ -11,6 +11,7 @@ DoctorDroidSpawns = ScreenPlay:new {
 	spawnLocations = {
 		-- Example only. Leave commented until you are ready to add real world spawns:
 		-- { planet = "tatooine", x = 3500.000, z = 5.000, y = -4800.000, heading = 90, cellID = 0, name = "Medix-01" },
+		{ planet = "tatooine", x = -0.22737866640091, z = -0.37821659445763, y = -4.7390251159668, heading = 90, cellID = 1590893, name = "Medix-01" },
 	}
 }
 
