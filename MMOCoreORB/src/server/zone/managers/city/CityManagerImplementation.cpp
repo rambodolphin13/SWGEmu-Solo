@@ -2063,7 +2063,21 @@ void CityManagerImplementation::sendMaintenanceReport(CityRegion* city, Creature
 		if (trainer != nullptr) {
 			int trainerCost = maintenanceDiscount * 1500;
 			totalcost += trainerCost;
-			maintList->addMenuItem("@city/city:default \t" + trainer->getObjectName()->getFullPath() + " : " + String::valueOf(trainerCost) + " @city/city:credits");
+
+			String trainerName = trainer->getObjectName()->getFullPath();
+
+			if (trainer->getObjectTemplate() != nullptr) {
+				String templateName = trainer->getObjectTemplate()->getFullTemplateString();
+
+				if (templateName.contains("doctor_droid"))
+					trainerName = "City Buffer: Doctor Droid";
+				else if (templateName.contains("dancer_buffer"))
+					trainerName = "City Buffer: Dancer";
+				else if (templateName.contains("musician_buffer"))
+					trainerName = "City Buffer: Musician";
+			}
+
+			maintList->addMenuItem("@city/city:default \t" + trainerName + " : " + String::valueOf(trainerCost) + " @city/city:credits");
 		}
 	}
 

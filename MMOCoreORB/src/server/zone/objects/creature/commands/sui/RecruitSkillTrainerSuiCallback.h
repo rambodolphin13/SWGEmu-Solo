@@ -28,9 +28,6 @@ public:
 		if (args->size() < 1)
 			return;
 
-		if (player->getParent() != nullptr)
-			return;
-
 		ManagedReference<CityRegion*> city = player->getCityRegion().get();
 		CityManager* cityManager = player->getZoneServer()->getCityManager();
 		if (city == nullptr || cityManager == nullptr)
@@ -156,6 +153,16 @@ public:
 				break;
 
 		case 32: trainerTemplatePath = "trainer_weaponsmith";
+				break;
+
+		case 33: trainerTemplatePath = "doctor_droid";
+				break;
+
+		case 34: trainerTemplatePath = "dancer_buffer";
+				break;
+
+		case 35: trainerTemplatePath = "musician_buffer";
+				break;
 
 		}
 
@@ -175,7 +182,21 @@ public:
 				return;
 			}
 
-			CreatureObject* trainer = zone->getCreatureManager()->spawnCreature(trainerTemplatePath.hashCode(),0,player->getWorldPositionX(),player->getWorldPositionZ(),player->getWorldPositionY(),0,true);
+			uint64 parentID = 0;
+			float spawnX = player->getWorldPositionX();
+			float spawnZ = player->getWorldPositionZ();
+			float spawnY = player->getWorldPositionY();
+
+			ManagedReference<SceneObject*> parent = player->getParent().get();
+
+			if (parent != nullptr && parent->isCellObject()) {
+				parentID = parent->getObjectID();
+				spawnX = player->getPositionX();
+				spawnZ = player->getPositionZ();
+				spawnY = player->getPositionY();
+			}
+
+			CreatureObject* trainer = zone->getCreatureManager()->spawnCreature(trainerTemplatePath.hashCode(), 0, spawnX, spawnZ, spawnY, parentID, true, player->getDirectionAngle());
 
 			if (trainer == nullptr) {
 				player->sendSystemMessage("@city/city:st_fail"); // Failed to create the skill trainer for some reason. Try again.

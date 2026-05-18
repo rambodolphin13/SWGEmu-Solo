@@ -81,6 +81,10 @@ public:
 		suiTrainerType->addMenuItem("@city/city:st_unarmed", 31);
 		suiTrainerType->addMenuItem("@city/city:st_weaponsmith", 32);
 
+		suiTrainerType->addMenuItem("City Buffer: Doctor Droid", 33);
+		suiTrainerType->addMenuItem("City Buffer: Dancer", 34);
+		suiTrainerType->addMenuItem("City Buffer: Musician", 35);
+
 		ghost->addSuiBox(suiTrainerType);
 		creature->sendMessage(suiTrainerType->generateMessage());
 
