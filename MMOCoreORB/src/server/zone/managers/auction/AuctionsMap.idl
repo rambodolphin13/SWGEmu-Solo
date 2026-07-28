@@ -79,6 +79,12 @@ class AuctionsMap extends ManagedObject {
 
 	public native int getCommodityCount(CreatureObject player);
 
+	public native int getSystemGeneratedItemCount();
+
+	public native int getSystemGeneratedResourceItemCount();
+
+	public native unsigned long getBazaarTerminalObjectID(int index);
+
 	public native void updateUID(SceneObject vendor, final string oldUID, final string newUID);
 
 	public native void updateVendorSearch(SceneObject vendor, boolean enabled);

@@ -6,6 +6,7 @@
  */
 
 #include "server/zone/managers/auction/AuctionManager.h"
+#include "server/zone/managers/credit/CreditManager.h"
 #include "server/zone/managers/auction/AuctionsMap.h"
 #include "server/zone/managers/object/ObjectManager.h"
 #include "templates/manager/TemplateManager.h"
@@ -27,6 +28,8 @@
 #include "server/zone/ZoneServer.h"
 #include "server/chat/ChatManager.h"
 #include "CheckAuctionsTask.h"
+#include "SimulatedBazaarPool.h"
+#include "DelayedBazaarRefillTask.h"
 #include "ExpireAuctionTask.h"
 #include "server/zone/managers/vendor/VendorManager.h"
 #include "server/zone/objects/tangible/components/vendor/VendorDataComponent.h"
@@ -35,6 +38,9 @@
 #include "AuctionSearchTask.h"
 #include "server/zone/objects/factorycrate/FactoryCrate.h"
 #include "server/zone/objects/transaction/TransactionLog.h"
+#include "server/zone/managers/resource/ResourceManager.h"
+#include "server/zone/objects/resource/ResourceSpawn.h"
+#include "server/zone/objects/resource/ResourceContainer.h"
 
 void AuctionManagerImplementation::initialize() {
 	Locker locker(_this.getReferenceUnsafeStaticCast());
@@ -116,7 +122,7 @@ void AuctionManagerImplementation::initialize() {
 
 		String ownerName = playerManager->getPlayerName(auctionItem->getOwnerID());
 
-		if (ownerName.isEmpty()) {
+		if (!auctionItem->isSystemGenerated() && ownerName.isEmpty()) {
 			error() << "Auction with invalid owner, deleting auctionItem: " << *auctionItem;
 			itemsToDelete.add(auctionItem);
 			continue;
@@ -277,6 +283,11 @@ void AuctionManagerImplementation::initialize() {
 		checkVendorItems(true);
 	}, "StartupAuctionManagerCheck", "slowQueue");
 
+	// Run a second refill after static city bazaar terminals finish loading.
+	Reference<DelayedBazaarRefillTask*> delayedBazaarRefill =
+		new DelayedBazaarRefillTask(_this.getReferenceUnsafeStaticCast());
+	delayedBazaarRefill->schedule(120 * 1000);
+
 	auto elapsed = startTime.miliDifference() / 1000.0;
 	int ps = elapsed > 0 ? countDatabaseItems / elapsed : countDatabaseItems;
 	int skipped = countDatabaseItems - auctionMap->getTotalItemCount();
@@ -327,6 +338,11 @@ void AuctionManagerImplementation::checkAuctions(bool startupTask) {
 
 	doAuctionMaint(&items, "bazaar", startupTask);
 
+	if (!startupTask)
+		runSimulatedMarketBuyer(&items, startupTask);
+
+	refillSimulatedBazaar(startupTask);
+
 	auto elapsed = timer.stopMs();
 
 	info("Bazaar terminal checks completed in " + String::valueOf(elapsed) + "ms", true);
@@ -374,7 +390,10 @@ void AuctionManagerImplementation::doAuctionMaint(TerminalListVector* items, con
 			ManagedReference<PlayerManager*> playerManager = zoneServer->getPlayerManager();
 			String ownerName = playerManager->getPlayerName(item->getOwnerID());
 
-			if(vendor == nullptr || vendor->getZone() == nullptr || ownerName.isEmpty()) {
+			bool missingRealOwner =
+				!item->isSystemGenerated() && ownerName.isEmpty();
+
+			if (vendor == nullptr || vendor->getZone() == nullptr || missingRealOwner) {
 				StringBuffer errMsg;
 
 				if (vendor == nullptr) {
@@ -385,7 +404,7 @@ void AuctionManagerImplementation::doAuctionMaint(TerminalListVector* items, con
 					errMsg << "vendor missing zone, ";
 				}
 
-				if (ownerName.isEmpty()) {
+				if (missingRealOwner) {
 					errMsg << "missing owner, ";
 				}
 
@@ -394,6 +413,33 @@ void AuctionManagerImplementation::doAuctionMaint(TerminalListVector* items, con
 				uint64 sellingId = item->getAuctionedItemObjectID();
 				auctionMap->deleteItem(vendor, item, true);
 				continue;
+			}
+
+			// Remove persisted simulated listings that use blank or placeholder names.
+			String marketItemName = item->getItemName();
+
+			bool invalidSystemItemName =
+				item->isSystemGenerated() &&
+				(marketItemName.isEmpty() ||
+				 marketItemName == "Turret Weapon" ||
+				 marketItemName == "an unknown weapon" ||
+				 marketItemName == "AT-ST");
+
+			if (invalidSystemItemName) {
+				warning() << "Removing simulated bazaar listing with invalid name '"
+					<< marketItemName << "': " << *item;
+
+				auctionMap->deleteItem(vendor, item, true);
+				continue;
+			}
+
+			// Backfill old player listings that predate listingCreatedTime.
+			// Treat them as newly listed so the simulated buyer cannot buy
+			// them immediately after this update.
+			if (!item->isSystemGenerated() &&
+					item->getListingCreatedTime() == 0) {
+				item->setListingCreatedTime(
+					static_cast<unsigned int>(currentTime));
 			}
 
 			uint64 vendorExpire = time(0) + AuctionManager::VENDOREXPIREPERIOD;
@@ -801,6 +847,9 @@ void AuctionManagerImplementation::addSaleItem(CreatureObject* player, uint64 ob
 }
 
 String AuctionManagerImplementation::getVendorUID(SceneObject* vendor) {
+	if (vendor != nullptr && vendor->isBazaarTerminal())
+		registerBazaarTerminal(vendor);
+
 	if(vendor->getZone() == nullptr) {
 		error() << "Vendor missing zone: " << *vendor;
 		return "nozone.nozone.sadpandavendor." + String::valueOf(vendor->getObjectID()) + "#0,0";
@@ -983,8 +1032,952 @@ AuctionItem* AuctionManagerImplementation::createVendorItem(CreatureObject* play
 		item->setExpireTime(commodityExpire);
 	}
 
+	ManagedReference<PlayerObject*> sellerGhost =
+		player->getPlayerObject();
+
+	item->setSellerAccountID(
+		sellerGhost != nullptr ? sellerGhost->getAccountID() : 0);
+
 	ObjectManager::instance()->persistObject(item, 0, "auctionitems");
 	updateAuctionOwner(item, player);
+
+	return item;
+}
+
+void AuctionManagerImplementation::registerBazaarTerminal(SceneObject* vendor) {
+	if (vendor == nullptr || !vendor->isBazaarTerminal())
+		return;
+
+	Locker locker(_this.getReferenceUnsafeStaticCast());
+
+	uint64 objectID = vendor->getObjectID();
+
+	if (!registeredBazaarTerminals.contains(objectID))
+		registeredBazaarTerminals.put(objectID, objectID);
+}
+
+int AuctionManagerImplementation::getRegisteredBazaarTerminalCount() {
+	Locker locker(_this.getReferenceUnsafeStaticCast());
+	return registeredBazaarTerminals.size();
+}
+
+uint64 AuctionManagerImplementation::getRegisteredBazaarTerminalObjectID(int index) {
+	Locker locker(_this.getReferenceUnsafeStaticCast());
+
+	if (index < 0 || index >= registeredBazaarTerminals.size())
+		return 0;
+
+	return registeredBazaarTerminals.elementAt(index).getKey();
+}
+
+SceneObject* AuctionManagerImplementation::createSimulatedBazaarObject(
+		const String& templatePath) {
+	if (templatePath.isEmpty())
+		return nullptr;
+
+	// Invalid templates are remembered for the lifetime of this Core3 process,
+	// preventing every refill pass from retrying and warning about them.
+	static Vector<uint32> invalidTemplateCRCs;
+
+	uint32 templateCRC =
+		static_cast<uint32>(templatePath.hashCode());
+
+	if (invalidTemplateCRCs.contains(templateCRC))
+		return nullptr;
+
+	ManagedReference<SceneObject*> object =
+		zoneServer->createObject(templateCRC, 1);
+
+	if (object == nullptr) {
+		invalidTemplateCRCs.add(templateCRC);
+
+		warning() << "Simulated bazaar cached uncreatable template: "
+			<< templatePath;
+
+		return nullptr;
+	}
+
+	bool invalidObject =
+		object->isNoTrade() ||
+		object->containsNoTradeObjectRecursive() ||
+		object->isIntangibleObject();
+
+	String displayName =
+		removeColorCodes(object->getDisplayedName()).trim();
+
+	bool invalidName =
+		displayName.isEmpty() ||
+		displayName == "blank" ||
+		displayName == "Turret Weapon" ||
+		displayName == "an unknown weapon" ||
+		displayName == "AT-ST";
+
+	if (invalidObject || invalidName) {
+		invalidTemplateCRCs.add(templateCRC);
+
+		{
+			Locker locker(object);
+			object->destroyObjectFromWorld(true);
+			object->destroyObjectFromDatabase();
+		}
+
+		warning() << "Simulated bazaar cached invalid template:"
+			<< " name=[" << displayName << "]"
+			<< " template=" << templatePath;
+
+		return nullptr;
+	}
+
+	return object;
+}
+
+int AuctionManagerImplementation::getSimulatedBuyerCategory(
+		SceneObject* item) {
+	if (item == nullptr || item->getObjectTemplate() == nullptr)
+		return 3;
+
+	String path =
+		item->getObjectTemplate()->getFullTemplateString();
+
+	if (path.contains("/weapon/") ||
+			path.contains("/armor/"))
+		return 0;
+
+	if (path.contains("/component/") ||
+			path.contains("/manufacture_schematic/") ||
+			path.contains("/tool/"))
+		return 1;
+
+	if (path.contains("/food/") ||
+			path.contains("/medicine/") ||
+			path.contains("/grenade/") ||
+			path.contains("/pharmaceutical/"))
+		return 2;
+
+	return 3;
+}
+
+void AuctionManagerImplementation::resetSimulatedBuyerDailyAccounting(
+		unsigned int currentDay) {
+	simulatedBuyerDay = currentDay;
+	simulatedBuyerSpent = 0;
+
+	simulatedBuyerWeaponsArmorSpent = 0;
+	simulatedBuyerComponentsSpent = 0;
+	simulatedBuyerConsumablesSpent = 0;
+	simulatedBuyerMiscSpent = 0;
+	simulatedBuyerReserveSpent = 0;
+
+	simulatedBuyerAccountSpent.removeAll();
+	simulatedBuyerTemplatePurchases.removeAll();
+
+	info(true) << "Simulated market buyer daily accounting reset:"
+		<< " day=" << currentDay
+		<< " totalBudget=10000000"
+		<< " accountCap=1000000";
+}
+
+void AuctionManagerImplementation::runSimulatedMarketBuyer(
+		TerminalListVector* items, bool startupTask) {
+	if (startupTask || items == nullptr)
+		return;
+
+	const uint64 DAILY_BUDGET = 10000000;
+	const int MAX_PURCHASE_PRICE = 250000;
+
+	unsigned int currentDay =
+		static_cast<unsigned int>(time(nullptr) / 86400);
+
+	{
+		Locker locker(_this.getReferenceUnsafeStaticCast());
+
+		if (simulatedBuyerDay != currentDay)
+			resetSimulatedBuyerDailyAccounting(currentDay);
+	}
+
+	if (simulatedBuyerSpent >= DAILY_BUDGET)
+		return;
+
+	int evaluated = 0;
+	int purchased = 0;
+
+	// Prevent one account, including all of its characters, from consuming
+	// the entire hourly simulated-buyer pass.
+	VectorMap<uint64, int> accountPurchasesThisPass;
+	accountPurchasesThisPass.setNoDuplicateInsertPlan();
+
+	for (int i = 0; i < items->size(); ++i) {
+		Reference<TerminalItemList*>& terminalList = items->get(i);
+
+		if (terminalList == nullptr || terminalList->size() == 0)
+			continue;
+
+		Reference<TerminalItemList*> list =
+			new TerminalItemList(*terminalList);
+
+		for (int j = 0; j < list->size(); ++j) {
+			ManagedReference<AuctionItem*> item = list->get(j);
+
+			if (item == nullptr)
+				continue;
+
+			evaluated++;
+
+			if (item->isSystemGenerated() ||
+					item->isAuction() ||
+					item->getStatus() != AuctionItem::FORSALE ||
+					item->getOwnerID() == 0 ||
+					item->getPrice() <= 0 ||
+					item->getPrice() > MAX_PURCHASE_PRICE)
+				continue;
+
+			if (simulatedBuyerSpent +
+					static_cast<uint64>(item->getPrice()) >
+					DAILY_BUDGET)
+				continue;
+
+			uint64 sellerAccountID =
+				static_cast<uint64>(
+					item->getSellerAccountID());
+
+			// Old listings without account metadata remain available to real
+			// players but are ineligible for the simulated buyer.
+			if (sellerAccountID == 0)
+				continue;
+
+			int accountPassPurchases = 0;
+
+			if (accountPurchasesThisPass.contains(
+					sellerAccountID))
+				accountPassPurchases =
+					accountPurchasesThisPass.get(
+						sellerAccountID);
+
+			if (accountPassPurchases >= 4)
+				continue;
+
+			if (trySimulatedMarketPurchase(item)) {
+				purchased++;
+
+				accountPurchasesThisPass.put(
+					sellerAccountID,
+					accountPassPurchases + 1);
+			}
+
+			if (simulatedBuyerSpent >= DAILY_BUDGET)
+				break;
+		}
+
+		if (simulatedBuyerSpent >= DAILY_BUDGET)
+			break;
+	}
+
+	info(true) << "Simulated market buyer pass: evaluated=" << evaluated
+		<< " purchased=" << purchased
+		<< " spentToday=" << simulatedBuyerSpent
+		<< " dailyBudget=" << DAILY_BUDGET;
+}
+
+bool AuctionManagerImplementation::trySimulatedMarketPurchase(
+		AuctionItem* item) {
+	if (item == nullptr)
+		return false;
+
+	uint64 now = time(nullptr);
+	uint64 createdTime = item->getListingCreatedTime();
+
+	if (createdTime == 0 || createdTime > now)
+		return false;
+
+	uint64 listingAge = now - createdTime;
+
+	// Never purchase a listing during its first two hours.
+	if (listingAge < 7200)
+		return false;
+
+	ManagedReference<SceneObject*> sellingItem =
+		zoneServer->getObject(item->getAuctionedItemObjectID());
+
+	if (sellingItem == nullptr ||
+			sellingItem->getObjectTemplate() == nullptr)
+		return false;
+
+	String templatePath =
+		sellingItem->getObjectTemplate()->getFullTemplateString();
+
+	int referenceMinimum = 0;
+	int referenceMaximum = 0;
+
+	for (int i = 0; i < SIMULATED_BAZAAR_POOL_SIZE; ++i) {
+		const SimulatedBazaarPoolEntry& entry =
+			SIMULATED_BAZAAR_POOL[i];
+
+		if (templatePath == entry.templatePath) {
+			referenceMinimum = entry.minimumPrice;
+			referenceMaximum = entry.maximumPrice;
+			break;
+		}
+	}
+
+	// First version only buys templates for which the simulated market has
+	// an explicit price range. Unknown, custom, and unmatched items are skipped.
+	if (referenceMaximum <= 0)
+		return false;
+
+	long long allowedPrice = referenceMaximum;
+
+	// Quantity-aware allowance for consumables and grenade stacks.
+	if (sellingItem->isTangibleObject()) {
+		TangibleObject* tangible = sellingItem->asTangibleObject();
+
+		if (tangible != nullptr && tangible->getUseCount() > 1) {
+			allowedPrice *= tangible->getUseCount();
+
+			// Apply the same broad bulk-discount concept as system listings.
+			allowedPrice = allowedPrice * 80 / 100;
+		}
+	}
+
+	if (allowedPrice > 250000)
+		allowedPrice = 250000;
+
+	if (item->getPrice() > allowedPrice)
+		return false;
+
+	int chancePercent = 3;
+
+	if (listingAge >= 259200)
+		chancePercent = 25;
+	else if (listingAge >= 86400)
+		chancePercent = 15;
+	else if (listingAge >= 21600)
+		chancePercent = 8;
+
+	// Improve the chance when the listing is substantially below the
+	// maximum acceptable market price.
+	if (item->getPrice() * 2 <= allowedPrice)
+		chancePercent *= 2;
+
+	if (chancePercent > 50)
+		chancePercent = 50;
+
+	if (System::random(99) >= chancePercent)
+		return false;
+
+	return completeSimulatedMarketPurchase(item);
+}
+
+bool AuctionManagerImplementation::completeSimulatedMarketPurchase(
+		AuctionItem* item) {
+	if (item == nullptr)
+		return false;
+
+	const uint64 DAILY_BUDGET = 10000000;
+	const int MAX_PURCHASE_PRICE = 250000;
+
+	ManagedReference<SceneObject*> vendor =
+		zoneServer->getObject(item->getVendorID());
+
+	if (vendor == nullptr ||
+			vendor->getZone() == nullptr ||
+			!vendor->isBazaarTerminal())
+		return false;
+
+	uint64 sellerID = 0;
+	uint64 sellingObjectID = 0;
+	int purchasePrice = 0;
+
+	unsigned int sellerAccountID = 0;
+	int buyerCategory = 3;
+	unsigned long templateKey = 0;
+
+	String sellerName;
+	String itemName;
+
+	{
+		Locker itemLocker(item);
+
+		if (item->isSystemGenerated() ||
+				item->isAuction() ||
+				item->getStatus() != AuctionItem::FORSALE ||
+				item->getOwnerID() == 0 ||
+				item->getPrice() <= 0 ||
+				item->getPrice() > MAX_PURCHASE_PRICE)
+			return false;
+
+		sellerID = item->getOwnerID();
+		sellingObjectID = item->getAuctionedItemObjectID();
+		purchasePrice = item->getPrice();
+		sellerName = item->getOwnerName();
+		itemName = removeColorCodes(item->getItemName());
+
+		// Ensure an offline-capable credit object actually exists before
+		// reserving budget or consuming the listing.
+		if (CreditManager::getCreditObject(sellerID) == nullptr)
+			return false;
+
+		sellerAccountID =
+			item->getSellerAccountID();
+
+		// Listings created before account tracking was introduced are skipped.
+		if (sellerAccountID == 0)
+			return false;
+
+		ManagedReference<SceneObject*> sellingObject =
+			zoneServer->getObject(sellingObjectID);
+
+		if (sellingObject == nullptr ||
+				sellingObject->getObjectTemplate() == nullptr)
+			return false;
+
+		buyerCategory =
+			getSimulatedBuyerCategory(sellingObject);
+
+		templateKey =
+			static_cast<unsigned long>(
+				sellingObject->getServerObjectCRC());
+
+		unsigned int currentDay =
+			static_cast<unsigned int>(time(nullptr) / 86400);
+
+		{
+			Locker managerLocker(
+				_this.getReferenceUnsafeStaticCast(), item);
+
+			if (simulatedBuyerDay != currentDay)
+				resetSimulatedBuyerDailyAccounting(currentDay);
+
+			if (simulatedBuyerSpent +
+					static_cast<uint64>(purchasePrice) >
+					DAILY_BUDGET)
+				return false;
+
+			const unsigned int ACCOUNT_DAILY_CAP = 1000000;
+			const unsigned int TEMPLATE_DAILY_LIMIT = 5;
+
+			unsigned int accountSpent = 0;
+
+			if (simulatedBuyerAccountSpent.contains(
+					static_cast<uint64>(sellerAccountID)))
+				accountSpent =
+					simulatedBuyerAccountSpent.get(
+						static_cast<uint64>(sellerAccountID));
+
+			if (accountSpent +
+					static_cast<unsigned int>(purchasePrice) >
+					ACCOUNT_DAILY_CAP)
+				return false;
+
+			unsigned int templatePurchases = 0;
+
+			if (simulatedBuyerTemplatePurchases.contains(
+					static_cast<uint64>(templateKey)))
+				templatePurchases =
+					simulatedBuyerTemplatePurchases.get(
+						static_cast<uint64>(templateKey));
+
+			if (templatePurchases >= TEMPLATE_DAILY_LIMIT)
+				return false;
+
+			unsigned int categoryCap = 2000000;
+			unsigned int categorySpent = simulatedBuyerMiscSpent;
+
+			if (buyerCategory == 0) {
+				categoryCap = 3000000;
+				categorySpent =
+					simulatedBuyerWeaponsArmorSpent;
+			} else if (buyerCategory == 1) {
+				categoryCap = 2500000;
+				categorySpent =
+					simulatedBuyerComponentsSpent;
+			} else if (buyerCategory == 2) {
+				categoryCap = 1500000;
+				categorySpent =
+					simulatedBuyerConsumablesSpent;
+			}
+
+			unsigned int categoryRemaining =
+				categorySpent < categoryCap ?
+					categoryCap - categorySpent : 0;
+
+			unsigned int reserveRequired = 0;
+
+			if (static_cast<unsigned int>(purchasePrice) >
+					categoryRemaining)
+				reserveRequired =
+					static_cast<unsigned int>(purchasePrice) -
+					categoryRemaining;
+
+			const unsigned int RESERVE_CAP = 1000000;
+
+			if (simulatedBuyerReserveSpent +
+					reserveRequired >
+					RESERVE_CAP)
+				return false;
+
+			unsigned int categoryCharge =
+				static_cast<unsigned int>(purchasePrice) -
+				reserveRequired;
+
+			if (buyerCategory == 0)
+				simulatedBuyerWeaponsArmorSpent +=
+					categoryCharge;
+			else if (buyerCategory == 1)
+				simulatedBuyerComponentsSpent +=
+					categoryCharge;
+			else if (buyerCategory == 2)
+				simulatedBuyerConsumablesSpent +=
+					categoryCharge;
+			else
+				simulatedBuyerMiscSpent +=
+					categoryCharge;
+
+			simulatedBuyerReserveSpent += reserveRequired;
+			simulatedBuyerSpent += purchasePrice;
+
+			simulatedBuyerAccountSpent.put(
+				static_cast<uint64>(sellerAccountID),
+				accountSpent + purchasePrice);
+
+			simulatedBuyerTemplatePurchases.put(
+				static_cast<uint64>(templateKey),
+				templatePurchases + 1);
+		}
+	}
+
+	// CreditManager resolves the persistent credit object directly, allowing
+	// sellers to be paid while offline.
+	CreditManager::addBankCredits(sellerID, purchasePrice, false);
+
+	ManagedReference<ChatManager*> chatManager =
+		zoneServer->getChatManager();
+
+	if (chatManager != nullptr && !sellerName.isEmpty()) {
+		StringIdChatParameterVector sellerBodyVector;
+		WaypointChatParameterVector sellerWaypointVector;
+
+		UnicodeString sellerSubject(
+			"@auction:subject_instant_seller");
+
+		StringIdChatParameter sellerBodySale(
+			"@auction:seller_success");
+
+		sellerBodySale.setTO(itemName);
+		sellerBodySale.setTT("Galactic Market");
+		sellerBodySale.setDI(purchasePrice);
+		sellerBodyVector.add(sellerBodySale);
+
+		WaypointChatParameter waypoint;
+		waypoint.set(
+			vendor->getDisplayedName(),
+			vendor->getWorldPositionX(),
+			0,
+			vendor->getWorldPositionY(),
+			vendor->getPlanetCRC());
+
+		sellerWaypointVector.add(waypoint);
+
+		UnicodeString blankBody;
+		chatManager->sendMail(
+			"auctioner",
+			sellerSubject,
+			blankBody,
+			sellerName,
+			&sellerBodyVector,
+			&sellerWaypointVector);
+	}
+
+	info(true) << "Simulated market buyer purchased player listing:"
+		<< " seller=" << sellerID
+		<< " account=" << sellerAccountID
+		<< " category=" << buyerCategory
+		<< " templateCRC=" << templateKey
+		<< " price=" << purchasePrice
+		<< " spentToday=" << simulatedBuyerSpent
+		<< " reserveSpent=" << simulatedBuyerReserveSpent
+		<< " object=" << sellingObjectID
+		<< " item=[" << itemName << "]";
+
+	// The simulated buyer consumes the purchased object. Passing true removes
+	// both the listing and its underlying database object.
+	auctionMap->deleteItem(vendor, item, true);
+
+	return true;
+}
+
+void AuctionManagerImplementation::refillSimulatedBazaar(bool startupTask) {
+	static const int TARGET_LISTINGS = 6000;
+	static const int MAX_PER_REFILL = 250;
+
+	static const int RESOURCE_LISTING_TARGET = 300;
+	static const int MAX_RESOURCES_PER_REFILL = 50;
+	static const int RESOURCE_STACK_QUANTITY = 10000;
+	static const int RESOURCE_LISTING_PRICE = 100000;
+	static const int CATEGORY_WEIGHTS[] = {16, 16, 12, 9, 13, 7, 8, 10, 4, 5};
+
+	static const char* sellerNames[] = {
+		"Corellian Trade Cooperative", "Wayfar Salvage", "Keren Supply Exchange",
+		"Dantooine Outfitters", "Naboo Artisan Market", "Anchorhead Provisioners",
+		"Rori Frontier Goods", "Lok Independent Traders", "Talus General Supply",
+		"Galactic Commerce Network", "Theed Merchants Guild", "Coronet Exchange",
+		"Bestine Trading House", "Nym's Independent Market", "Jabba's Commercial Agents"
+	};
+
+	int terminalCount = getRegisteredBazaarTerminalCount();
+	bool useRegisteredTerminals = terminalCount > 0;
+	if (!useRegisteredTerminals)
+		terminalCount = auctionMap->getBazaarCount();
+
+	if (terminalCount < 1) {
+		if (startupTask)
+			warning() << "Simulated bazaar refill skipped: no bazaar terminals registered";
+		return;
+	}
+
+	int existingCount = auctionMap->getSystemGeneratedItemCount();
+	int existingResourceCount =
+		auctionMap->getSystemGeneratedResourceItemCount();
+
+	int needed = TARGET_LISTINGS - existingCount;
+
+	if (needed <= 0)
+		return;
+
+	if (needed > MAX_PER_REFILL)
+		needed = MAX_PER_REFILL;
+
+	int resourceNeeded =
+		RESOURCE_LISTING_TARGET - existingResourceCount;
+
+	if (resourceNeeded < 0)
+		resourceNeeded = 0;
+
+	if (resourceNeeded > MAX_RESOURCES_PER_REFILL)
+		resourceNeeded = MAX_RESOURCES_PER_REFILL;
+
+	if (resourceNeeded > needed)
+		resourceNeeded = needed;
+
+	unsigned int generationBatch = (unsigned int)time(0);
+	int created = 0;
+	int resourcesCreated = 0;
+	int sellerCount = sizeof(sellerNames) / sizeof(sellerNames[0]);
+
+	for (int attempt = 0; attempt < needed * 12 && created < needed; ++attempt) {
+		uint64 terminalID = useRegisteredTerminals
+			? getRegisteredBazaarTerminalObjectID(System::random(terminalCount - 1))
+			: auctionMap->getBazaarTerminalObjectID(System::random(terminalCount - 1));
+		ManagedReference<SceneObject*> terminal = zoneServer->getObject(terminalID);
+		if (terminal == nullptr || terminal->getZone() == nullptr || !terminal->isBazaarTerminal())
+			continue;
+
+		int rarityRoll = System::random(999);
+		String zoneName = terminal->getZone()->getZoneName();
+		bool frontier = zoneName == "dathomir" || zoneName == "endor" || zoneName == "yavin4" || zoneName == "lok";
+		int desiredRarity;
+		if (frontier && rarityRoll >= 970)
+			desiredRarity = SB_EXCEPTIONAL;
+		else if (rarityRoll >= (frontier ? 880 : 930))
+			desiredRarity = SB_RARE;
+		else if (rarityRoll >= 700)
+			desiredRarity = SB_UNCOMMON;
+		else
+			desiredRarity = SB_COMMON;
+
+		int categoryRoll = System::random(99);
+		int desiredCategory = SB_MISC;
+		int runningWeight = 0;
+		for (int c = 0; c < 10; ++c) {
+			runningWeight += CATEGORY_WEIGHTS[c];
+			if (categoryRoll < runningWeight) {
+				desiredCategory = c;
+				break;
+			}
+		}
+
+
+		// Fill the resource portion of the market gradually. ResourceMap
+		// includes active and shifted-out historical resources.
+		if (resourcesCreated < resourceNeeded) {
+			ManagedReference<ResourceManager*> resourceManager =
+				zoneServer->getResourceManager();
+
+			ManagedReference<ResourceSpawn*> resourceSpawn = nullptr;
+
+			if (resourceManager != nullptr)
+				resourceSpawn =
+					resourceManager->
+						getRandomHistoricalResourceSpawn();
+
+			if (resourceSpawn != nullptr) {
+				Reference<ResourceContainer*> resourceContainer =
+					nullptr;
+
+				{
+					Locker resourceLocker(resourceSpawn);
+
+					resourceContainer =
+						resourceSpawn->createResource(
+							RESOURCE_STACK_QUANTITY);
+
+					if (resourceContainer != nullptr)
+						resourceSpawn->extractResource(
+							"",
+							RESOURCE_STACK_QUANTITY);
+				}
+
+				if (resourceContainer != nullptr) {
+					unsigned int duration =
+						86400 + System::random(518400);
+
+					String sellerName =
+						sellerNames[
+							System::random(
+								sellerCount - 1)];
+
+					UnicodeString description(
+						"A 10,000-unit historical resource "
+						"shipment from the simulated "
+						"galactic market.");
+
+					AuctionItem* listing =
+						createSystemBazaarItem(
+							resourceContainer,
+							terminal,
+							sellerName,
+							description,
+							RESOURCE_LISTING_PRICE,
+							duration,
+							generationBatch);
+
+					if (listing != nullptr) {
+						++created;
+						++resourcesCreated;
+						continue;
+					}
+
+					Locker containerLocker(
+						resourceContainer);
+
+					resourceContainer->
+						destroyObjectFromWorld(true);
+
+					resourceContainer->
+						destroyObjectFromDatabase();
+				}
+			}
+
+			// Do not lose the complete refill attempt when no valid
+			// historical resource was available. Fall through and create
+			// an ordinary simulated-market item instead.
+		}
+
+		const SimulatedBazaarPoolEntry* entry = nullptr;
+		for (int pick = 0; pick < 160; ++pick) {
+			const SimulatedBazaarPoolEntry& candidate = SIMULATED_BAZAAR_POOL[System::random(SIMULATED_BAZAAR_POOL_SIZE - 1)];
+			if (candidate.category == desiredCategory && candidate.rarity == desiredRarity) {
+				entry = &candidate;
+				break;
+			}
+		}
+		if (entry == nullptr)
+			entry = &SIMULATED_BAZAAR_POOL[System::random(SIMULATED_BAZAAR_POOL_SIZE - 1)];
+
+		ManagedReference<SceneObject*> object = createSimulatedBazaarObject(entry->templatePath);
+		if (object == nullptr)
+			continue;
+
+		// Do not create bazaar listings for templates with missing display names.
+		String displayedName = object->getDisplayedName();
+
+		bool invalidMarketName =
+			displayedName.isEmpty() ||
+			displayedName == "Turret Weapon" ||
+			displayedName == "an unknown weapon" ||
+			displayedName == "AT-ST";
+
+		if (invalidMarketName) {
+			warning() << "Skipping simulated bazaar item with invalid display name '"
+				<< displayedName << "': " << entry->templatePath;
+
+			Locker objectLocker(object);
+			object->destroyObjectFromWorld(true);
+			object->destroyObjectFromDatabase();
+			continue;
+		}
+
+		int price = entry->minimumPrice;
+		int priceRange = entry->maximumPrice - entry->minimumPrice;
+
+		// Bias ordinary market prices toward the lower end while preserving
+		// occasional expensive listings.
+		if (priceRange > 0) {
+			int rollOne = System::random(priceRange);
+			int rollTwo = System::random(priceRange);
+			int rollThree = System::random(priceRange);
+
+			int selectedRoll = rollOne;
+
+			if (rollTwo < selectedRoll)
+				selectedRoll = rollTwo;
+
+			if (rollThree < selectedRoll)
+				selectedRoll = rollThree;
+
+			price += selectedRoll;
+		}
+		// Sell consumables and combat grenades as multi-use market bundles.
+		String simulatedTemplatePath = entry->templatePath;
+
+		bool isGrenadeTemplate =
+			simulatedTemplatePath.contains("/weapon/ranged/grenade/");
+
+		bool isComponentTemplate =
+			simulatedTemplatePath.contains("/tangible/component/");
+
+		bool shouldBundleItem =
+			entry->category == 6 ||
+			isGrenadeTemplate ||
+			isComponentTemplate;
+
+		if (shouldBundleItem && object->isTangibleObject()) {
+			TangibleObject* tangible = object->asTangibleObject();
+
+			if (tangible != nullptr) {
+				int bundleQuantity = 25;
+				int bundleDiscountPercent = 50;
+
+				// Crafted and looted components commonly appear in smaller
+				// production stacks than disposable consumables.
+				if (isComponentTemplate)
+					bundleQuantity = 15;
+
+				{
+					Locker tangibleLocker(tangible);
+					tangible->setUseCount(bundleQuantity, false);
+				}
+
+				// Treat the generated price as a per-unit roll and apply
+				// the category-specific bulk discount to the complete stack.
+				long long bundlePrice =
+					static_cast<long long>(price) *
+					bundleQuantity *
+					bundleDiscountPercent / 100;
+
+				int bundlePriceCap = MAXBAZAARPRICE;
+
+				if (isGrenadeTemplate)
+					bundlePriceCap = 35000;
+				else if (isComponentTemplate)
+					bundlePriceCap = 100000;
+
+				if (bundlePrice > bundlePriceCap)
+					price = bundlePriceCap;
+				else
+					price = static_cast<int>(bundlePrice);
+			}
+		}
+
+		if (price < 1)
+			price = 1;
+		else if (price > MAXBAZAARPRICE)
+			price = MAXBAZAARPRICE;
+
+		unsigned int duration = 86400 + System::random(518400); // One to seven days.
+		String sellerName = sellerNames[System::random(sellerCount - 1)];
+		UnicodeString description("A system-generated listing from the simulated galactic market.");
+
+		AuctionItem* listing = createSystemBazaarItem(object, terminal, sellerName, description, price, duration, generationBatch);
+		if (listing == nullptr) {
+			Locker objectLocker(object);
+			object->destroyObjectFromWorld(true);
+			object->destroyObjectFromDatabase();
+			continue;
+		}
+		++created;
+	}
+
+	info(true) << "Simulated bazaar refill: existing=" << existingCount
+		<< " target=" << TARGET_LISTINGS
+		<< " created=" << created
+		<< " existingResources=" << existingResourceCount
+		<< " resourcesCreated=" << resourcesCreated
+		<< " resourceTarget=" << RESOURCE_LISTING_TARGET
+		<< " terminals=" << terminalCount
+		<< " pool=" << SIMULATED_BAZAAR_POOL_SIZE
+		<< " batch=" << generationBatch;
+}
+
+AuctionItem* AuctionManagerImplementation::createSystemBazaarItem(SceneObject* objectToSell, SceneObject* bazaarTerminal, const String& sellerDisplayName, const UnicodeString& description, int price, unsigned int duration, unsigned int generationBatch) {
+	if (objectToSell == nullptr || bazaarTerminal == nullptr || !bazaarTerminal->isBazaarTerminal() || bazaarTerminal->getZone() == nullptr) {
+		error() << "createSystemBazaarItem: invalid object or bazaar terminal";
+		return nullptr;
+	}
+
+	if (objectToSell->isNoTrade() || objectToSell->containsNoTradeObjectRecursive() || objectToSell->isIntangibleObject()) {
+		error() << "createSystemBazaarItem: refusing non-tradable object " << objectToSell->getObjectID();
+		return nullptr;
+	}
+
+	if (auctionMap->containsItem(objectToSell->getObjectID())) {
+		error() << "createSystemBazaarItem: object already listed " << objectToSell->getObjectID();
+		return nullptr;
+	}
+
+	if (price < 1)
+		price = 1;
+	else if (price > MAXBAZAARPRICE)
+		price = MAXBAZAARPRICE;
+
+	if (duration == 0 || duration > AuctionManager::COMMODITYEXPIREPERIOD)
+		duration = AuctionManager::COMMODITYEXPIREPERIOD;
+
+	ManagedReference<AuctionItem*> item = new AuctionItem(objectToSell->getObjectID());
+
+	{
+		Locker locker(item);
+		item->setVendorUID(getVendorUID(bazaarTerminal));
+		item->setVendorID(bazaarTerminal->getObjectID());
+		item->setOnBazaar(true);
+		item->setItemName(objectToSell->getDisplayedName());
+		item->setItemDescription(description.toString());
+		item->setItemType(objectToSell->getClientGameObjectType());
+		item->setPrice(price);
+		item->setAuction(false); // System listings are instant-buy only.
+		item->setStatus(AuctionItem::FORSALE);
+		item->setBuyerID(0);
+		item->setListingCreatedTime(static_cast<unsigned int>(time(nullptr)));
+		item->setBidderName("");
+		item->setOwnerID(0);
+		item->setSellerAccountID(0);
+		item->setOwnerName(sellerDisplayName);
+		item->setSize(objectToSell->getSizeOnVendorRecursive());
+		item->setExpireTime(time(0) + duration);
+		item->setSystemGenerated(true);
+		item->setSystemGeneratedResource(
+			objectToSell->isResourceContainer());
+		item->setSystemGenerationBatch(generationBatch);
+	}
+
+	ObjectManager::instance()->persistObject(item, 0, "auctionitems");
+
+	int result = auctionMap->addItem(nullptr, bazaarTerminal, item);
+	if (result != ItemSoldMessage::SUCCESS) {
+		error() << "createSystemBazaarItem: failed to add listing, result=" << ItemSoldMessage::statusToString(result);
+		item->destroyAuctionItemFromDatabase(false, false);
+		return nullptr;
+	}
+
+	{
+		Locker objectLocker(objectToSell);
+		objectToSell->destroyObjectFromWorld(true);
+	}
+
+	item->setPersistent(1);
+
+	info() << "System bazaar listing created: seller=[" << sellerDisplayName
+		<< "] price=" << price << " batch=" << generationBatch
+		<< " auctionItem: " << *item;
 
 	return item;
 }
@@ -1005,7 +1998,95 @@ int AuctionManagerImplementation::checkBidAuction(CreatureObject* player, Auctio
 	return 0;
 }
 
+void AuctionManagerImplementation::doSystemInstantBuy(CreatureObject* player, AuctionItem* item) {
+	if (player == nullptr || item == nullptr)
+		return;
+
+	ManagedReference<SceneObject*> vendor = zoneServer->getObject(item->getVendorID());
+	if (vendor == nullptr || vendor->getZone() == nullptr || !vendor->isBazaarTerminal()) {
+		BaseMessage* msg = new BidAuctionResponseMessage(item->getAuctionedItemObjectID(), BidAuctionResponseMessage::INVALIDITEM);
+		player->sendMessage(msg);
+		return;
+	}
+
+	String playerName = player->getFirstName().toLowerCase();
+	String sellerName = item->getOwnerName();
+	String itemName = removeColorCodes(item->getItemName());
+	String vendorPlanetName("@planet_n:" + vendor->getZone()->getZoneName());
+	String vendorRegionName = vendorPlanetName;
+
+	ManagedReference<CityRegion*> city = vendor->getCityRegion().get();
+	if (city != nullptr)
+		vendorRegionName = city->getCityRegionName();
+
+	Time now;
+	uint64 availableTime = (now.getMiliTime() / 1000) + AuctionManager::COMMODITYEXPIREPERIOD;
+
+	{
+		Locker locker(item);
+
+		if (item->getStatus() != AuctionItem::FORSALE) {
+			BaseMessage* msg = new BidAuctionResponseMessage(item->getAuctionedItemObjectID(), BidAuctionResponseMessage::INVALIDITEM);
+			player->sendMessage(msg);
+			return;
+		}
+
+		if (player->getBankCredits() < item->getPrice()) {
+			BaseMessage* msg = new BidAuctionResponseMessage(item->getAuctionedItemObjectID(), BidAuctionResponseMessage::NOTENOUGHCREDITS);
+			player->sendMessage(msg);
+			return;
+		}
+
+		item->setStatus(AuctionItem::SOLD);
+		item->setExpireTime(availableTime);
+		item->setBuyerID(player->getObjectID());
+		item->setBidderName(playerName);
+		item->clearAuctionWithdraw();
+	}
+
+	TransactionLog trx(player, TrxCode::INSTANTBUY, item->getPrice(), false);
+	trx.addRelatedObject(item->getAuctionedItemObjectID(), true);
+	player->subtractBankCredits(item->getPrice());
+
+	BaseMessage* response = new BidAuctionResponseMessage(item->getAuctionedItemObjectID(), BidAuctionResponseMessage::SUCCEDED);
+	player->sendMessage(response);
+
+	WaypointChatParameter waypoint;
+	waypoint.set(vendor->getDisplayedName(), vendor->getWorldPositionX(), 0, vendor->getWorldPositionY(), vendor->getPlanetCRC());
+
+	StringIdChatParameterVector buyerBodyVector;
+	WaypointChatParameterVector buyerWaypointVector;
+	UnicodeString buyerSubject("@auction:subject_instant_buyer");
+
+	StringIdChatParameter buyerBodySale("@auction:buyer_success");
+	buyerBodySale.setTO(itemName);
+	buyerBodySale.setTT(sellerName);
+	buyerBodySale.setDI(item->getPrice());
+
+	StringIdChatParameter buyerBodyLoc("@auction:buyer_success_location");
+	buyerBodyLoc.setTO(vendorPlanetName);
+	buyerBodyLoc.setTT(vendorRegionName);
+
+	buyerBodyVector.add(buyerBodySale);
+	buyerBodyVector.add(buyerBodyLoc);
+	buyerWaypointVector.add(waypoint);
+
+	ManagedReference<ChatManager*> chatManager = zoneServer->getChatManager();
+	UnicodeString blankBody;
+	chatManager->sendMail("auctioner", buyerSubject, blankBody, item->getBidderName(), &buyerBodyVector, &buyerWaypointVector);
+
+	info() << "System bazaar item purchased: buyer=" << player->getObjectID()
+		<< " sellerDisplay=[" << sellerName << "] price=" << item->getPrice()
+		<< " batch=" << item->getSystemGenerationBatch()
+		<< " auctionItem: " << *item;
+}
+
 void AuctionManagerImplementation::doInstantBuy(CreatureObject* player, AuctionItem* item) {
+	if (item != nullptr && item->isSystemGenerated()) {
+		doSystemInstantBuy(player, item);
+		return;
+	}
+
 	ManagedReference<SceneObject*> vendor = zoneServer->getObject(item->getVendorID());
 
 	if (vendor == nullptr)
@@ -2088,6 +3169,19 @@ void AuctionManagerImplementation::cancelItem(CreatureObject* player, uint64 obj
 }
 
 void AuctionManagerImplementation::expireSale(AuctionItem* item) {
+	if (item != nullptr && item->isSystemGenerated()) {
+		ManagedReference<SceneObject*> vendor = zoneServer->getObject(item->getVendorID());
+
+		if (vendor != nullptr) {
+			info() << "Removing expired system bazaar listing, batch=" << item->getSystemGenerationBatch() << " auctionItem: " << *item;
+			auctionMap->deleteItem(vendor, item, true);
+		} else {
+			item->destroyAuctionItemFromDatabase(true, true);
+		}
+
+		return;
+	}
+
 	Locker locker(item);
 
 	if(item->getStatus() == AuctionItem::EXPIRED) {

@@ -273,6 +273,50 @@ void AuctionsMapImplementation::updateVendorSearch(SceneObject* vendor, bool ena
 	vendorItemsForSale.updateTerminalSearch(vendor, enabled);
 }
 
+uint64 AuctionsMapImplementation::getBazaarTerminalObjectID(int index) {
+	Locker locker(_this.getReferenceUnsafeStaticCast());
+
+	if (index < 0 || index >= bazaarItemsForSale.size())
+		return 0;
+
+	return bazaarItemsForSale.elementAt(index).getKey();
+}
+
+
+int AuctionsMapImplementation::getSystemGeneratedResourceItemCount() {
+	Locker locker(_this.getReferenceUnsafeStaticCast());
+
+	int count = 0;
+
+	for (int i = 0; i < allItems.size(); ++i) {
+		ManagedReference<AuctionItem*> item =
+			allItems.elementAt(i).getValue();
+
+		if (item != nullptr &&
+				item->isSystemGenerated() &&
+				item->isSystemGeneratedResource() &&
+				item->getStatus() == AuctionItem::FORSALE)
+			++count;
+	}
+
+	return count;
+}
+
+int AuctionsMapImplementation::getSystemGeneratedItemCount() {
+	Locker locker(_this.getReferenceUnsafeStaticCast());
+
+	int count = 0;
+
+	for (int i = 0; i < allItems.size(); ++i) {
+		ManagedReference<AuctionItem*> item = allItems.elementAt(i).getValue();
+
+		if (item != nullptr && item->isSystemGenerated() && item->getStatus() == AuctionItem::FORSALE)
+			++count;
+	}
+
+	return count;
+}
+
 int AuctionsMapImplementation::getCommodityCount(CreatureObject* player) {
 
 	Locker locker(&commoditiesLimit);

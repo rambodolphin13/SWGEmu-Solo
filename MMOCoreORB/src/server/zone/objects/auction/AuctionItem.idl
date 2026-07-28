@@ -24,6 +24,10 @@ class AuctionItem extends ManagedObject {
 
 	protected unsigned long ownerID;
 	protected string ownerName;
+
+	// Account that originally created this player listing.
+	// System-generated listings use zero.
+	protected unsigned int sellerAccountID;
 	protected string bidderName;
 	protected unsigned long offerToID;
 
@@ -33,6 +37,9 @@ class AuctionItem extends ManagedObject {
 	protected string itemDescription;
 
 	protected int price;
+
+	// Time this listing was originally posted, in Unix seconds.
+	protected unsigned int listingCreatedTime;
 	protected int proxyBid;
 
 	protected boolean auction;
@@ -49,6 +56,21 @@ class AuctionItem extends ManagedObject {
 	protected unsigned int expireTime;
 
 	protected boolean updated;
+
+	// Native NPC/system market listing. These listings have no player seller.
+	protected boolean systemGenerated;
+	protected boolean systemGeneratedResource;
+
+	@read
+	public boolean isSystemGeneratedResource() {
+		return systemGeneratedResource;
+	}
+
+	@write
+	public void setSystemGeneratedResource(boolean value) {
+		systemGeneratedResource = value;
+	}
+	protected unsigned int systemGenerationBatch;
 
 	protected int auctionOptions;
 
@@ -68,9 +90,11 @@ class AuctionItem extends ManagedObject {
 		size = 1;
 
 		ownerID = 0;
+		sellerAccountID = 0;
 		offerToID = 0;
 
 		price = 0;
+		listingCreatedTime = 0;
 		proxyBid = 0;
 		status = FORSALE;
 
@@ -85,6 +109,9 @@ class AuctionItem extends ManagedObject {
 		expireTime = 0;
 
 		updated = false;
+
+		systemGenerated = false;
+		systemGenerationBatch = 0;
 
 		auctionOptions = 0;
 		lastUpdateTime.updateToCurrentTime();
@@ -112,6 +139,29 @@ class AuctionItem extends ManagedObject {
 	public native void notifyLoadFromDatabase();
 
 	public native boolean destroyAuctionItemFromDatabase(boolean checkAuctionMap = true, boolean deleteAuctionedObject = false);
+
+
+	@preLocked
+	public void setSystemGenerated(boolean value) {
+		systemGenerated = value;
+		lastUpdateTime.updateToCurrentTime();
+	}
+
+	@preLocked
+	public void setSystemGenerationBatch(unsigned int value) {
+		systemGenerationBatch = value;
+		lastUpdateTime.updateToCurrentTime();
+	}
+
+	@read
+	public boolean isSystemGenerated() {
+		return systemGenerated;
+	}
+
+	@read
+	public unsigned int getSystemGenerationBatch() {
+		return systemGenerationBatch;
+	}
 
 	@preLocked
 	public void setVendorID(unsigned long val) {
@@ -153,6 +203,14 @@ class AuctionItem extends ManagedObject {
 	public void setItemType(int type) {
 		itemType = type;
 		lastUpdateTime.updateToCurrentTime();
+	}
+
+	public void setSellerAccountID(unsigned int accountID) {
+		sellerAccountID = accountID;
+	}
+
+	public unsigned int getSellerAccountID() {
+		return sellerAccountID;
 	}
 
 	@preLocked
@@ -285,6 +343,14 @@ class AuctionItem extends ManagedObject {
 	@read
 	public int getPrice() {
 		return price;
+	}
+
+	public void setListingCreatedTime(unsigned int value) {
+		listingCreatedTime = value;
+	}
+
+	public unsigned int getListingCreatedTime() {
+		return listingCreatedTime;
 	}
 
 	@read

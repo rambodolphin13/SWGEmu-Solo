@@ -33,7 +33,26 @@ class AuctionManager extends ManagedService implements Logger {
 	@dereferenced
 	protected VectorMap<SceneObject, string> pendingOldUIDUpdates;
 
-	public final static int MAXBAZAARPRICE = 20000;
+	@dereferenced
+	protected VectorMap<unsigned long, unsigned long> registeredBazaarTerminals;
+
+	// Persistent server-wide simulated buyer accounting.
+	protected unsigned int simulatedBuyerDay;
+	protected unsigned int simulatedBuyerSpent;
+
+	protected unsigned int simulatedBuyerWeaponsArmorSpent;
+	protected unsigned int simulatedBuyerComponentsSpent;
+	protected unsigned int simulatedBuyerConsumablesSpent;
+	protected unsigned int simulatedBuyerMiscSpent;
+	protected unsigned int simulatedBuyerReserveSpent;
+
+	@dereferenced
+	protected VectorMap<unsigned long, unsigned int> simulatedBuyerAccountSpent;
+
+	@dereferenced
+	protected VectorMap<unsigned long, unsigned int> simulatedBuyerTemplatePurchases;
+
+	public final static int MAXBAZAARPRICE = 1000000;
 	public final static int MAXSALES = 25; // this only apply to bazaars
 	public final static int SALESFEE = 20;
 	public final static int CHECKEVERY = 60; // Minutes
@@ -72,6 +91,20 @@ class AuctionManager extends ManagedService implements Logger {
 		marketEnabled = false;
 		auctionEvents.setNoDuplicateInsertPlan();
 		auctionEvents.setNullValue(null);
+
+		registeredBazaarTerminals.setNoDuplicateInsertPlan();
+
+		simulatedBuyerDay = 0;
+		simulatedBuyerSpent = 0;
+
+		simulatedBuyerWeaponsArmorSpent = 0;
+		simulatedBuyerComponentsSpent = 0;
+		simulatedBuyerConsumablesSpent = 0;
+		simulatedBuyerMiscSpent = 0;
+		simulatedBuyerReserveSpent = 0;
+
+		simulatedBuyerAccountSpent.setNoDuplicateInsertPlan();
+		simulatedBuyerTemplatePurchases.setNoDuplicateInsertPlan();
 	}
 
 	public native void initialize();
@@ -81,6 +114,14 @@ class AuctionManager extends ManagedService implements Logger {
 
 	@local
 	public native AuctionItem createVendorItem(CreatureObject player, SceneObject objectToSell, SceneObject vendor, final unicode description, int price, unsigned int duration, boolean auction, boolean premium);
+
+	/**
+	 * Adds an instant-buy bazaar listing owned by the simulated market rather
+	 * than a player. The caller must provide an already-created tradable object
+	 * and a real bazaar terminal.
+	 */
+	@local
+	public native AuctionItem createSystemBazaarItem(SceneObject objectToSell, SceneObject bazaarTerminal, final string sellerDisplayName, final unicode description, int price, unsigned int duration, unsigned int generationBatch);
 
 	@local
 	public native int checkSaleItem(CreatureObject player, SceneObject object, SceneObject vendor, int price, boolean premium, boolean stockroomSale);
@@ -103,6 +144,18 @@ class AuctionManager extends ManagedService implements Logger {
 	public native void buyItem(CreatureObject player, unsigned long objectid, int price1, int price2);
 	public native void doAuctionBid(CreatureObject player, AuctionItem item, int price1, int price2);
 	public native void doInstantBuy(CreatureObject player, AuctionItem item);
+	private native void doSystemInstantBuy(CreatureObject player, AuctionItem item);
+
+	public native void refillSimulatedBazaar(boolean startupTask = false);
+	private native SceneObject createSimulatedBazaarObject(final string templatePath);
+
+	private native void runSimulatedMarketBuyer(TerminalListVector items, boolean startupTask);
+	private native boolean trySimulatedMarketPurchase(AuctionItem item);
+	private native boolean completeSimulatedMarketPurchase(AuctionItem item);
+
+	private native int getSimulatedBuyerCategory(SceneObject item);
+	private native void resetSimulatedBuyerDailyAccounting(unsigned int currentDay);
+
 	public native int checkBidAuction(CreatureObject player, AuctionItem item, int price1, int price2);
 
 	public native void cancelItem(CreatureObject player, unsigned long objectID);
@@ -123,10 +176,17 @@ class AuctionManager extends ManagedService implements Logger {
 
 	public native string getVendorUID(SceneObject vendor);
 
+	public native void registerBazaarTerminal(SceneObject vendor);
+	public native int getRegisteredBazaarTerminalCount();
+	public native unsigned long getRegisteredBazaarTerminalObjectID(int index);
+
 	@local
 	public native Logger getLogger();
 
 	public synchronized void updateVendorUID(SceneObject vendor, final string oldUID, final string newUID) {
+
+		if (vendor && vendor.isBazaarTerminal())
+			registerBazaarTerminal(vendor);
 
 		if(!auctionMap) {
 			pendingUIDUpdates.put(vendor, newUID);

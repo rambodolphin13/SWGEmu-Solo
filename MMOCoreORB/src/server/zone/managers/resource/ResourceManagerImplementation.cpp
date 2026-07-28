@@ -255,6 +255,45 @@ ResourceSpawn* ResourceManagerImplementation::getResourceSpawn(const String& spa
 	return spawn;
 }
 
+
+ResourceSpawn* ResourceManagerImplementation::getRandomHistoricalResourceSpawn() {
+	ReadLocker locker(_this.getReferenceUnsafeStaticCast());
+
+	ResourceMap* resourceMap = resourceSpawner->getResourceMap();
+
+	if (resourceMap == nullptr || resourceMap->size() == 0)
+		return nullptr;
+
+	int resourceCount = resourceMap->size();
+	int startIndex = System::random(resourceCount - 1);
+
+	// Begin at a random position, then walk the complete historical map.
+	// ResourceMap contains active and shifted-out resources.
+	for (int offset = 0; offset < resourceCount; ++offset) {
+		int index = (startIndex + offset) % resourceCount;
+
+		ManagedReference<ResourceSpawn*> spawn =
+			resourceMap->elementAt(index).getValue();
+
+		if (spawn == nullptr ||
+				spawn->isUnknownType() ||
+				resourceSpawner->isRecycledResource(spawn))
+			continue;
+
+		String resourceName = spawn->getName();
+
+		// Keep manually generated perfect resources out of the ordinary
+		// simulated market. They can receive separate rules later.
+		if (resourceName.beginsWith("P-") ||
+				resourceName.beginsWith("p-"))
+			continue;
+
+		return spawn;
+	}
+
+	return nullptr;
+}
+
 ResourceSpawn* ResourceManagerImplementation::getCurrentSpawn(const String& restype, const String& zoneName) {
 	return resourceSpawner->getCurrentSpawn(restype, zoneName);
 }

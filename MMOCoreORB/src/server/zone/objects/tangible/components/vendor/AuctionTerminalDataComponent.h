@@ -51,6 +51,11 @@ public:
 		if(auctionManager == nullptr || strongParent == nullptr || strongParent->getZone() == nullptr)
 			return;
 
+		// Register every loaded bazaar terminal even when its saved UID
+		// has not changed.
+		if (strongParent->isBazaarTerminal())
+			auctionManager->registerBazaarTerminal(strongParent);
+
 		String olduid = uid;
 
 		uid = strongParent->getZone()->getZoneName() + ".";
