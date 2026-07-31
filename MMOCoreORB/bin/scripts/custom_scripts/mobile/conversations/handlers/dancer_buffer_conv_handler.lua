@@ -1,91 +1,73 @@
-dancerBufferConvoHandler = conv_handler:new {}
+dancerBufferConvoHandler = conv_handler:new {
+	basicPrice = 2000,
+	middlePrice = 7500,
+	premiumPrice = 25000
+}
 
-function dancerBufferConvoHandler:startDanceAndMaintenance(pNpc)
-	if (pNpc == nil) then
+function dancerBufferConvoHandler:chargePlayer(pPlayer, amount)
+	if (pPlayer == nil or amount == nil or amount <= 0) then return false end
+	if (CreatureObject(pPlayer):getCashCredits() < amount) then
+		CreatureObject(pPlayer):sendSystemMessage("You need " .. amount .. " cash credits for that service.")
 		return false
 	end
+	CreatureObject(pPlayer):subtractCashCredits(amount)
+	return true
+end
 
-	if (CreatureObject(pNpc):isDancing()) then
-		createEvent(1 * 1000, "DancerBufferMaintenance", "maintainHAM", pNpc, "")
-		return true
+function dancerBufferConvoHandler:healPlayer(pPlayer)
+	for i = 0, 8 do CreatureObject(pPlayer):setWounds(i, 0) end
+	CreatureObject(pPlayer):setShockWounds(0)
+end
+
+function dancerBufferConvoHandler:applyTier(pPlayer, price, amount, duration, speedBoost, label)
+	if not self:chargePlayer(pPlayer, price) then return false end
+	self:healPlayer(pPlayer)
+	CreatureObject(pPlayer):enhanceCharacterTier(amount, duration, speedBoost)
+	CreatureObject(pPlayer):sendSystemMessage(label .. " applied: full healing, +" .. amount .. " to all HAM attributes for " .. (duration / 3600) .. " hours" .. (speedBoost and ", plus 25% movement speed for 2 hours." or "."))
+	return true
+end
+
+function dancerBufferConvoHandler:startDanceAndMaintenance(pNpc, dance)
+	if pNpc == nil then return false end
+	local objectID = SceneObject(pNpc):getObjectID()
+	dance = dance or readStringData("aiDancer:dance:" .. objectID)
+	if dance == nil or dance == "" then dance = "popular" end
+
+	if CreatureObject(pNpc):isDancing() then
+		CreatureObject(pNpc):stopDancePerformance()
 	end
 
-	local startedDance = CreatureObject(pNpc):startDance("popular")
-
-	if (startedDance) then
-		createEvent(1 * 1000, "DancerBufferMaintenance", "maintainHAM", pNpc, "")
-	end
-
+	writeStringData("aiDancer:dance:" .. objectID, dance)
+	local startedDance = CreatureObject(pNpc):startDance(dance)
+	if startedDance then createEvent(1 * 1000, "DancerBufferMaintenance", "maintainHAM", pNpc, "") end
 	return startedDance
 end
 
 function dancerBufferConvoHandler:getInitialScreen(pPlayer, pNpc, pConvTemplate)
-	if (pPlayer == nil or pNpc == nil or pConvTemplate == nil) then
-		return
-	end
-
-	-- For manually placed dancers: if the server restarted and she is no longer dancing,
-	-- opening her conversation will immediately restart the real popular dance and HAM maintenance.
-	self:startDanceAndMaintenance(pNpc)
-
-	local convoTemplate = LuaConversationTemplate(pConvTemplate)
-
-	return convoTemplate:getScreen("intro")
+	if pPlayer == nil or pNpc == nil or pConvTemplate == nil then return end
+	if not CreatureObject(pNpc):isDancing() then self:startDanceAndMaintenance(pNpc) end
+	return LuaConversationTemplate(pConvTemplate):getScreen("intro")
 end
 
 function dancerBufferConvoHandler:runScreenHandlers(pConvTemplate, pPlayer, pNpc, selectedOption, pConvScreen)
-	if (pPlayer == nil or pConvScreen == nil) then
-		return pConvScreen
-	end
-
+	if pPlayer == nil or pConvScreen == nil then return pConvScreen end
 	local screen = LuaConversationScreen(pConvScreen)
 	local pNewConvScreen = screen:cloneScreen()
 	local screenID = screen:getScreenID()
 
-	if (screenID == "buff_player") then
-		CreatureObject(pPlayer):enhanceCharacter()
-		CreatureObject(pPlayer):sendSystemMessage("The dancer buffer inspires you with performance and medical buffs.")
-
-		self:startDanceAndMaintenance(pNpc)
-	elseif (screenID == "heal_player") then
-		for i = 0, 8 do
-			CreatureObject(pPlayer):setWounds(i, 0)
-		end
-
-		CreatureObject(pPlayer):setShockWounds(0)
-		CreatureObject(pPlayer):sendSystemMessage("The dancer buffer restores your wounds and fatigue.")
-
-		self:startDanceAndMaintenance(pNpc)
-	elseif (screenID == "full_service") then
-		CreatureObject(pPlayer):enhanceCharacter()
-
-		for i = 0, 8 do
-			CreatureObject(pPlayer):setWounds(i, 0)
-		end
-
-		CreatureObject(pPlayer):setShockWounds(0)
-		CreatureObject(pPlayer):sendSystemMessage("The dancer buffer fully restores and buffs you.")
-
-		self:startDanceAndMaintenance(pNpc)
-	elseif (screenID == "popular_dance") then
-		if (self:startDanceAndMaintenance(pNpc)) then
-			CreatureObject(pPlayer):sendSystemMessage("The dancer buffer begins performing the popular dance.")
+	if screenID == "basic_service" then
+		self:applyTier(pPlayer, self.basicPrice, 750, 7200, false, "Basic service")
+	elseif screenID == "enhanced_service" then
+		self:applyTier(pPlayer, self.middlePrice, 1500, 14400, false, "Enhanced service")
+	elseif screenID == "premium_service" then
+		self:applyTier(pPlayer, self.premiumPrice, 3000, 28800, true, "Premium service")
+	elseif string.sub(screenID, 1, 6) == "dance_" and screenID ~= "dance_menu" then
+		local dance = string.sub(screenID, 7)
+		if self:startDanceAndMaintenance(pNpc, dance) then
+			CreatureObject(pPlayer):sendSystemMessage("Vessa changes her performance to " .. dance .. ".")
 		else
-			CreatureObject(pPlayer):sendSystemMessage("The dancer buffer could not start the popular dance.")
+			CreatureObject(pPlayer):sendSystemMessage("That dance could not be started.")
 		end
-	elseif (screenID == "show_location") then
-		local localX = SceneObject(pPlayer):getPositionX()
-		local localY = SceneObject(pPlayer):getPositionY()
-		local localZ = SceneObject(pPlayer):getPositionZ()
-		local worldX = SceneObject(pPlayer):getWorldPositionX()
-		local worldY = SceneObject(pPlayer):getWorldPositionY()
-		local worldZ = SceneObject(pPlayer):getWorldPositionZ()
-		local parentID = SceneObject(pPlayer):getParentID()
-
-		CreatureObject(pPlayer):sendSystemMessage("Dancer Buffer spawn line:")
-		CreatureObject(pPlayer):sendSystemMessage("{ planet = \"tatooine\", x = " .. localX .. ", z = " .. localZ .. ", y = " .. localY .. ", heading = 0, cellID = " .. parentID .. ", name = \"Vessa Talorin\" },")
-		CreatureObject(pPlayer):sendSystemMessage("World position: x=" .. worldX .. " z=" .. worldZ .. " y=" .. worldY .. " parentID=" .. parentID)
 	end
-
 	return pNewConvScreen
 end

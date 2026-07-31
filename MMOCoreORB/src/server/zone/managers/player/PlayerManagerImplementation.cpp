@@ -3384,12 +3384,16 @@ void PlayerManagerImplementation::stopListen(CreatureObject* creature, uint64 en
 		return;
 	}
 
-	if (!object->isPlayerCreature()) {
+	CreatureObject* entertainer = cast<CreatureObject*>(object.get());
+	const bool isAIServiceMusician = entertainer != nullptr &&
+		(((entertainer->getScreenPlayState("AIServiceEntertainer") & 0x2) != 0) ||
+		 entertainer->getDisplayedName().contains("Rinna Valen") ||
+		 entertainer->getDisplayedName().contains("Mira Sol"));
+
+	if (!object->isPlayerCreature() && !isAIServiceMusician) {
 		creature->sendSystemMessage("@performance:music_listen_npc"); // "You cannot /listen to NPCs."
 		return;
 	}
-
-	CreatureObject* entertainer = cast<CreatureObject*>( object.get());
 
 	if (entertainer == creature)
 		return;
@@ -3471,12 +3475,16 @@ void PlayerManagerImplementation::stopWatch(CreatureObject* creature, uint64 ent
 	if (object == nullptr)
 		return;
 
-	if (!object->isPlayerCreature()) {
+	CreatureObject* entertainer = cast<CreatureObject*>(object.get());
+	const bool isAIServiceDancer = entertainer != nullptr &&
+		(((entertainer->getScreenPlayState("AIServiceEntertainer") & 0x1) != 0) ||
+		 entertainer->getDisplayedName().contains("Vessa Talorin") ||
+		 entertainer->getDisplayedName().contains("Roxy McDances"));
+
+	if (!object->isPlayerCreature() && !isAIServiceDancer) {
 		creature->sendSystemMessage("@performance:dance_watch_npc"); // "You cannot /watch NPCs."
 		return;
 	}
-
-	CreatureObject* entertainer = cast<CreatureObject*>( object.get());
 
 	if (entertainer == creature)
 		return;
@@ -3558,7 +3566,13 @@ void PlayerManagerImplementation::startWatch(CreatureObject* creature, uint64 en
 	if (object == nullptr)
 		return;
 
-	if (!object->isPlayerCreature()) {
+	CreatureObject* aiEntertainer = cast<CreatureObject*>(object.get());
+	const bool isAIServiceDancer = aiEntertainer != nullptr &&
+		(((aiEntertainer->getScreenPlayState("AIServiceEntertainer") & 0x1) != 0) ||
+		 aiEntertainer->getDisplayedName().contains("Vessa Talorin") ||
+		 aiEntertainer->getDisplayedName().contains("Roxy McDances"));
+
+	if (!object->isPlayerCreature() && !isAIServiceDancer) {
 		creature->sendSystemMessage("@performance:dance_watch_npc"); // "You can not /watch NPCs."
 		return;
 	}
@@ -3686,12 +3700,16 @@ void PlayerManagerImplementation::startListen(CreatureObject* creature, uint64 e
 		return;
 	}
 
-	if (!object->isPlayerCreature()) {
+	CreatureObject* entertainer = cast<CreatureObject*>(object.get());
+	const bool isAIServiceMusician = entertainer != nullptr &&
+		(((entertainer->getScreenPlayState("AIServiceEntertainer") & 0x2) != 0) ||
+		 entertainer->getDisplayedName().contains("Rinna Valen") ||
+		 entertainer->getDisplayedName().contains("Mira Sol"));
+
+	if (!object->isPlayerCreature() && !isAIServiceMusician) {
 		creature->sendSystemMessage("@performance:music_listen_npc"); // "You cannot /listen to NPCs."
 		return;
 	}
-
-	CreatureObject* entertainer = cast<CreatureObject*>( object.get());
 
 	if (creature == entertainer)
 		return;
@@ -6687,6 +6705,54 @@ void PlayerManagerImplementation::enhanceCharacter(CreatureObject* player) {
 
 	if (message && player->isPlayerCreature())
 		player->sendSystemMessage("An unknown force strengthens you for battles yet to come.");
+}
+
+void PlayerManagerImplementation::enhanceCharacterTier(CreatureObject* player, int amount, int duration, bool speedBoost) {
+	if (player == nullptr || amount <= 0 || duration <= 0)
+		return;
+
+	// These are the same nine CRCs used by the stock admin buff. Remove any
+	// existing version first so a paid tier always replaces/refreshes it with
+	// the exact requested value and duration, including upgrades and downgrades.
+	static const uint32 attributeBuffCrcs[9] = {
+		0x98321369, // medical_enhance_health
+		0x815D85C5, // medical_enhance_strength
+		0x7F86D2C6, // medical_enhance_constitution
+		0x4BF616E2, // medical_enhance_action
+		0x71B5C842, // medical_enhance_quickness
+		0xED0040D9, // medical_enhance_stamina
+		0x11C1772E, // performance_enhance_dance_mind
+		0x2E77F586, // performance_enhance_music_focus
+		0x3EC6FCB6  // performance_enhance_music_willpower
+	};
+
+	for (int i = 0; i < 9; ++i) {
+		if (player->hasBuff(attributeBuffCrcs[i]))
+			player->removeBuff(attributeBuffCrcs[i]);
+	}
+
+	doEnhanceCharacter(attributeBuffCrcs[0], player, amount, duration, BuffType::MEDICAL, 0);
+	doEnhanceCharacter(attributeBuffCrcs[1], player, amount, duration, BuffType::MEDICAL, 1);
+	doEnhanceCharacter(attributeBuffCrcs[2], player, amount, duration, BuffType::MEDICAL, 2);
+	doEnhanceCharacter(attributeBuffCrcs[3], player, amount, duration, BuffType::MEDICAL, 3);
+	doEnhanceCharacter(attributeBuffCrcs[4], player, amount, duration, BuffType::MEDICAL, 4);
+	doEnhanceCharacter(attributeBuffCrcs[5], player, amount, duration, BuffType::MEDICAL, 5);
+	doEnhanceCharacter(attributeBuffCrcs[6], player, amount, duration, BuffType::PERFORMANCE, 6);
+	doEnhanceCharacter(attributeBuffCrcs[7], player, amount, duration, BuffType::PERFORMANCE, 7);
+	doEnhanceCharacter(attributeBuffCrcs[8], player, amount, duration, BuffType::PERFORMANCE, 8);
+
+	uint32 speedCrc = STRING_HASHCODE("ai_entertainer_speed_boost");
+	if (player->hasBuff(speedCrc))
+		player->removeBuff(speedCrc);
+
+	if (speedBoost) {
+		ManagedReference<Buff*> speedBuff = new Buff(player, speedCrc, 7200, BuffType::SKILL);
+		Locker locker(speedBuff);
+		speedBuff->setSpeedMultiplierMod(1.25f);
+		speedBuff->setAccelerationMultiplierMod(1.25f);
+		player->addBuff(speedBuff);
+		player->updateSpeedAndAccelerationMods();
+	}
 }
 
 void PlayerManagerImplementation::sendAdminJediList(CreatureObject* player) {

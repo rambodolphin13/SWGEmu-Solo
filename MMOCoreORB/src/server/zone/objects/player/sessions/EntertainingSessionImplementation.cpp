@@ -854,6 +854,11 @@ void EntertainingSessionImplementation::activateEntertainerBuff(CreatureObject* 
 			return;
 
 		ManagedReference<PlayerObject*> entPlayer = entertainer->getPlayerObject();
+		// AI service entertainers have no PlayerObject. Their paid conversation
+		// handles buffs; /watch and /listen still use the normal patron session.
+		if (entPlayer == nullptr)
+			return;
+
 		//Check if the patron is a valid buff target
 		//Whether it be passive(in the same group) or active (/setPerform target)
 		if ((!entertainer->isGrouped() || entertainer->getGroupID() != creature->getGroupID()) && entPlayer->getPerformanceBuffTarget() != creature->getObjectID())
@@ -984,6 +989,11 @@ void EntertainingSessionImplementation::increaseEntertainerBuff(CreatureObject* 
 		return;
 
 	ManagedReference<PlayerObject*> entPlayer = entertainer->getPlayerObject();
+	// AI service entertainers have no PlayerObject. Skip player-only buff
+	// accumulation while keeping watch/listen and entertainment audio active.
+	if (entPlayer == nullptr)
+		return;
+
 	//Check if the patron is a valid buff target
 	//Whether it be passive(in the same group) or active (/setPerform target)
 	if ((!entertainer->isGrouped() || entertainer->getGroupID() != patron->getGroupID()) && entPlayer->getPerformanceBuffTarget() != patron->getObjectID())

@@ -18,6 +18,7 @@ musician_buffer = Creature:new {
 
 	-- Female cantina-style look. Change this if you find a musician-specific look you prefer.
 	templates = {"object/mobile/dressed_diva_human_female_01.iff"},
+	outfit = "band_slitherhorn_outfit",
 
 	lootGroups = {},
 	weapons = {},

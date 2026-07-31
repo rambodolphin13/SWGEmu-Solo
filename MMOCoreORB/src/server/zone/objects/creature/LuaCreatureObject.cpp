@@ -152,6 +152,7 @@ Luna<LuaCreatureObject>::RegType LuaCreatureObject::Register[] = {
 		{ "healDamage", &LuaCreatureObject::healDamage },
 		{ "getGroupID", &LuaCreatureObject::getGroupID },
 		{ "enhanceCharacter", &LuaCreatureObject::enhanceCharacter },
+		{ "enhanceCharacterTier", &LuaCreatureObject::enhanceCharacterTier },
 		{ "setWounds", &LuaCreatureObject::setWounds },
 		{ "setShockWounds", &LuaCreatureObject::setShockWounds },
 		{ "getForceSensitiveSkillCount", &LuaCreatureObject::getForceSensitiveSkillCount },
@@ -1306,7 +1307,9 @@ int LuaCreatureObject::getPerformanceName(lua_State* L) {
 
 
 int LuaCreatureObject::startMusic(lua_State* L) {
-	const char* musicArg = lua_tostring(L, -1);
+	const int argumentCount = lua_gettop(L);
+	const char* instrumentArg = argumentCount >= 3 ? lua_tostring(L, -1) : nullptr;
+	const char* musicArg = argumentCount >= 3 ? lua_tostring(L, -2) : lua_tostring(L, -1);
 
 	if (musicArg == nullptr) {
 		lua_pushboolean(L, false);
@@ -1314,6 +1317,16 @@ int LuaCreatureObject::startMusic(lua_State* L) {
 	}
 
 	String musicName = musicArg;
+	String instrumentName = instrumentArg != nullptr ? String(instrumentArg).toLowerCase() : "nalargon";
+	int instrumentType = Instrument::NALARGON;
+	String instrumentTemplate = "object/tangible/instrument/nalargon.iff";
+	String instrumentDisplayName = "AI Entertainer's Nalargon";
+
+	if (instrumentName == "slitherhorn") {
+		instrumentType = Instrument::SLITHERHORN;
+		instrumentTemplate = "object/tangible/instrument/slitherhorn.iff";
+		instrumentDisplayName = "Rinna's Slitherhorn";
+	}
 
 	if (musicName.isEmpty()) {
 		lua_pushboolean(L, false);
@@ -1327,7 +1340,6 @@ int LuaCreatureObject::startMusic(lua_State* L) {
 		return 1;
 	}
 
-	int instrumentType = Instrument::NALARGON;
 	int performanceIndex = performanceManager->getPerformanceIndex(PerformanceType::MUSIC, musicName, instrumentType);
 
 	if (performanceIndex == 0) {
@@ -1346,7 +1358,7 @@ int LuaCreatureObject::startMusic(lua_State* L) {
 			return 1;
 		}
 
-		ManagedReference<SceneObject*> sceneObject = zoneServer->createObject(STRING_HASHCODE("object/tangible/instrument/nalargon.iff"), 0);
+		ManagedReference<SceneObject*> sceneObject = zoneServer->createObject(instrumentTemplate.hashCode(), 0);
 
 		if (sceneObject == nullptr) {
 			lua_pushboolean(L, false);
@@ -1363,32 +1375,27 @@ int LuaCreatureObject::startMusic(lua_State* L) {
 		}
 
 		Locker locker(instrument);
-
 		instrument->initializePosition(realObject->getPositionX(), realObject->getPositionZ(), realObject->getPositionY());
 
 		uint64 parentID = realObject->getParentID();
-
 		if (parentID != 0) {
 			ManagedReference<SceneObject*> parent = zoneServer->getObject(parentID);
-
-			if (parent != nullptr && parent->isCellObject()) {
+			if (parent != nullptr && parent->isCellObject())
 				parent->transferObject(instrument, -1);
-			} else {
+			else
 				zone->transferObject(instrument, -1, true);
-			}
 		} else {
 			zone->transferObject(instrument, -1, true);
 		}
 
 		instrument->setSpawnerPlayer(realObject);
-		instrument->setCustomObjectName("Rinna's Nalargon", false);
+		instrument->setCustomObjectName(instrumentDisplayName, false);
 		instrument->setDirection(*realObject->getDirection());
-
 		realObject->setTargetID(instrument->getObjectID(), false);
 	}
 
 	ManagedReference<Facade*> facade = realObject->getActiveSession(SessionFacadeType::ENTERTAINING);
-	ManagedReference<EntertainingSession*> session = dynamic_cast<EntertainingSession*> (facade.get());
+	ManagedReference<EntertainingSession*> session = dynamic_cast<EntertainingSession*>(facade.get());
 
 	if (session == nullptr) {
 		session = new EntertainingSession(realObject);
@@ -1396,7 +1403,6 @@ int LuaCreatureObject::startMusic(lua_State* L) {
 	}
 
 	session->startPlayingMusic(performanceIndex, instrument);
-
 	lua_pushboolean(L, realObject->isPlayingMusic());
 	return 1;
 }
@@ -1549,6 +1555,17 @@ int LuaCreatureObject::getGroupID(lua_State* L) {
 int LuaCreatureObject::enhanceCharacter(lua_State* L) {
 	PlayerManager* playerManager = realObject->getZoneServer()->getPlayerManager();
 	playerManager->enhanceCharacter(realObject);
+
+	return 0;
+}
+
+int LuaCreatureObject::enhanceCharacterTier(lua_State* L) {
+	bool speedBoost = lua_toboolean(L, -1);
+	int duration = lua_tointeger(L, -2);
+	int amount = lua_tointeger(L, -3);
+
+	PlayerManager* playerManager = realObject->getZoneServer()->getPlayerManager();
+	playerManager->enhanceCharacterTier(realObject, amount, duration, speedBoost);
 
 	return 0;
 }

@@ -1,8 +1,9 @@
 DancerBufferMaintenance = ScreenPlay:new {
 	numberOfActs = 1,
 
-	-- How often to refill HAM while the NPC is dancing.
-	tickTime = 5 * 1000
+	-- Frequent enough to keep NPC performances stable without expensive AI logic.
+	tickTime = 5 * 1000,
+	restartDelay = 2 * 1000
 }
 
 registerScreenPlay("DancerBufferMaintenance", false)
@@ -12,7 +13,9 @@ function DancerBufferMaintenance:maintainHAM(pNpc)
 		return
 	end
 
+	-- If the dance was interrupted, restart the NPC's assigned performance.
 	if (not CreatureObject(pNpc):isDancing()) then
+		createEvent(self.restartDelay, "DancerBufferSpawns", "startPerformance", pNpc, "")
 		return
 	end
 
